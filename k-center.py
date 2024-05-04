@@ -2,6 +2,7 @@ import numpy as np
 import scipy.optimize
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize
+import copy
 
 def euclidean_distance(x, y):
     return np.sqrt(np.sum((x - y)**2))
@@ -67,7 +68,7 @@ print("Maximum distance to nearest center:", max_dist)
 
 
 # define the radius for the ball to outline the covering/packing constraints
-beta = 1.5
+beta = 2
 r = beta * max_dist
 
 epsilon = 0.25
@@ -79,12 +80,15 @@ def initialization(points):
     x = np.zeros(len(points))
 
     # start with a set of candidate points of randomly selected 10 points from input
-    indices = np.random.choice(points.shape[0], size = 10, replace=False)
-    candidates = points[indices, :]
+    #indices = np.random.choice(points.shape[0], size = 10, replace=False)
+    #candidates = points[indices, :]
     
     print("\n")
-    print("candidate indices:", indices)
-    print("center candidates:", candidates)
+    #print("candidate indices:", indices)
+    #print("center candidates:", candidates)
+
+    indices = []
+    candidates = []
 
     # initialize constraint matrix
     constraint_matrix = []
@@ -106,10 +110,11 @@ def update_constraints(C,s, n):
 def find_candidates(candidate_indices, points, client, radius):
     s = []
     for index in candidate_indices:
-        if euclidean_distance(points[index], client) <= radius:
-            s.append(index)
+        #print("index in candidate_indicies:", index)
+        if euclidean_distance(points[int(index)], client) <= radius:
+            s.append(int(index))
     
-    print("center candidates within radius:", s)
+    print("candidates within radius:", s)
     return s
 
 # check if new client's constraint is satisfied
@@ -142,6 +147,11 @@ def covering_objective(x, x_old, s, epsilon):
 
 # packing objective function for solving x's
 def packing_objective(x, x_old):
+
+    # avoiding divide by zero
+    c = 1e-10
+    x_old = np.maximum(x_old, c)
+    
     return np.sum(x * np.log(x/x_old) - x)
 
 
@@ -186,13 +196,9 @@ def update_packing_variables(x, epsilon, k):
 
     result = minimize(packing_objective, x0, args=(x), constraints=cons, method='SLSQP')
 
+    print("updated fraction solutions after packing violation:", result.x)
+
     return result.x
-
-
-########################## rouding algorithm for each fractional solution at time t ###############################
-
-
-    
 
 
 ############################ main method for online positive-body chasing for k-center ############################
@@ -207,10 +213,16 @@ def online_k_center(points, k, r):
     #index = np.zeros(len(points))
     #x_hat = np.zeros(len(points))
 
-    for t in range(10):
-        # when a client arrives, check if there is any violating constraint
-        candidate_index = np.append(candidate_index, t)
+    for t in range(50):
+
+        x_old = copy.deepcopy(x)
+        # when a client arrives, add it to the set of points that are known
+        candidate_index = np.append(candidate_index, int(t))
         candidates = np.append(candidates, points[t])
+
+        print("\n")
+        
+        print("time t:", t)
 
         print("current client:", points[t])
 
@@ -231,14 +243,31 @@ def online_k_center(points, k, r):
             print("packing constraint violated!")
             x_new = update_packing_variables(x, epsilon, k)
 
+        
+        # update total recourse in l1-norm
+        #print("x_old:", x_old)
+        #print("x_new:", x_new)
+        print("recourse in this round:", np.sum(np.abs(x_new - x_old)))
 
-    
-    # update total recourse in l1-norm
-    recourse += np.sum(np.abs(x_new - x))
-    
-    return
+        recourse += np.sum(np.abs(x_new - x_old))
+        x = x_new
     
 
-online_k_center(data_points, k, r)
+    return x, recourse
+
+
+fractional_sol, recourse = online_k_center(data_points, k, r) 
+
+print("\n")
+print("final fractional solution:", fractional_sol)
+print("number of centers:", np.sum(fractional_sol))
+print("total recourse:", recourse)
+
+
+
+
+########################## rouding algorithm for each fractional solution at time t ###############################
+def k_center_rounding(x):
+
 
 

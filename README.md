@@ -1,3 +1,8 @@
 # Dynamic-Clustering
+The implementation of the fractional LP and rouding algorithms for the following 3 online problems: dynamic k-center, facility location, and k-median 
 
-## Fractional LP-solver and rounding for dynamic k-center
+## Dynamic k-center
+
+### Fractional LP solver for dynamic k-center
+
+### Rounding for dynamic k-center

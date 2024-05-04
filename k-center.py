@@ -68,7 +68,7 @@ print("Maximum distance to nearest center:", max_dist)
 
 
 # define the radius for the ball to outline the covering/packing constraints
-beta = 2
+beta = 1.5
 r = beta * max_dist
 
 epsilon = 0.25
@@ -210,10 +210,8 @@ def online_k_center(points, k, r):
     # initialize the vector x with all 0s of dimension len(points)
     x, candidate_index, candidates, constraint_mat = initialization(points)
 
-    #index = np.zeros(len(points))
-    #x_hat = np.zeros(len(points))
 
-    for t in range(50):
+    for t in range(100):
 
         x_old = copy.deepcopy(x)
         # when a client arrives, add it to the set of points that are known
@@ -245,17 +243,21 @@ def online_k_center(points, k, r):
 
         
         # update total recourse in l1-norm
-        #print("x_old:", x_old)
-        #print("x_new:", x_new)
         print("recourse in this round:", np.sum(np.abs(x_new - x_old)))
 
         recourse += np.sum(np.abs(x_new - x_old))
         x = x_new
+
+        # integrate rounding at each round
+        # maintain a set S of open centers at each t
+        # calculate for each i in S it's radius = min(beta * OPT(t_i), diag)
+        # OPT(t_i) is calculated using the offline algorithm
     
 
     return x, recourse
 
 
+# testing the fractional LP solver
 fractional_sol, recourse = online_k_center(data_points, k, r) 
 
 print("\n")
@@ -263,11 +265,91 @@ print("final fractional solution:", fractional_sol)
 print("number of centers:", np.sum(fractional_sol))
 print("total recourse:", recourse)
 
-
-
-
 ########################## rouding algorithm for each fractional solution at time t ###############################
-def k_center_rounding(x):
+
+# set the parameters
+alpha = 3 + 3 * np.sqrt(2)
+delta = np.sqrt(2)
+
+#data_points = data_points[:50].copy()
+
+print("radius:", r)
+
+# subroutine to find the balls B_i and B_hait_i at each center i
+# this subroutine is called whenever the set S is updated
+def find_balls(data_points, s, radius):
+    
+    B = []
+    B_hat = []
+
+    for i in range(len(s)):
+        points = []
+        points_hat = []
+
+        for j in range(len(data_points)):
+            print("current client:", j)
+            print("current center:", s[i])
+
+            print("client coordinate:", data_points[j])
+            print("center coordinate:", data_points[s[i]])
+            print("distance:", euclidean_distance(data_points[j], data_points[s[i]]))
+            if euclidean_distance(data_points[j], data_points[s[i]]) <= radius:
+                points.append(j)
+            
+            if euclidean_distance(data_points[j], data_points[s[i]]) <= alpha * radius:
+                points_hat.append(j)
+        
+        B.append(points)
+        print("points within reach of center:", points)
+        B_hat.append(points_hat)
+    
+    return B, B_hat
+
+########################################### the main rounding routine #############################################
+def k_center_rounding(x, data_points):
+    
+    # collect the indices of points whose x values are not zero
+    s = []
+    s = np.nonzero(x)
+    s = list(s[0])
+
+    print("initial set of centers:", s)
+
+    B, B_hat = find_balls(data_points, s, r)
+
+    for i in range(len(s)):
+        points_in_reach = B[i]
+        print("current center for mass:", s[i])
+        print("mass for current center ball:", np.sum(x[points_in_reach]))
+
+        if np.sum(x[points_in_reach]) < 1 - epsilon:
+            s.remove(s[i])
+            B_hat.remove(B_hat[i])
+    
+    print("updated set of centers:", s)
+    
+    ball_set = set(item for sublist in B_hat for item in sublist)
+
+    print("points covered:", ball_set)
+
+    while len(ball_set) < len(data_points):
+        # find the clients that are not covered by the current set of centers
+        uncovered = set(range(0, len(data_points))) - ball_set
+
+        j = next(iter(uncovered))
+        s.append(j)
+        #ball_set.append(j)
+
+        for center_index in s:
+            if center_index != j and euclidean_distance(data_points[center_index], data_points[j]) <= 2 * r + delta * r:
+                s.remove(center_index)
+
+        # update the balls
+        B, B_hat = find_balls(data_points, s, r)
+        ball_set = set(item for sublist in B_hat for item in sublist)
+
+    return s
+
 
 
 

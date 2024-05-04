@@ -1,3 +1,3 @@
 # Dynamic-Clustering
 
-# Fractional LP-solver and rounding for dynamic k-center
+## Fractional LP-solver and rounding for dynamic k-center

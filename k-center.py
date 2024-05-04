@@ -61,10 +61,7 @@ print("Selected Centers:", centers)
 print("Maximum distance to nearest center:", max_dist)
 
 
-####################################################################################################################################
-#
-#
-################ online positive-body chasing for k-center #########################################################################
+####################################### online positive-body chasing for k-center ##################################################
 
 
 # define the radius for the ball to outline the covering/packing constraints
@@ -132,14 +129,10 @@ def check_covering_feasibility(s, x):
 def covering_objective(x, x_old, s, epsilon):
 
     # we only deal with the x_i's whose coefficient c_i is nonzero
-    # print("candidate set passed to objective:", s)
     prev_x_hat = np.zeros(len(s))
 
     for i in range(len(prev_x_hat)):
         prev_x_hat[i] = x_old[s[i]] + epsilon/(4*len(s))
-
-    
-    #print("x_hat values in candidate set:", prev_x_hat)
     
     #prev_x = np.zeros(len(s))
     return np.sum((x + epsilon/(4*len(s))) * np.log((x + epsilon/(4*len(s)))/prev_x_hat) - (x + epsilon/(4*len(s))))
@@ -271,6 +264,7 @@ print("total recourse:", recourse)
 alpha = 3 + 3 * np.sqrt(2)
 delta = np.sqrt(2)
 
+# testing on batches of data points
 #data_points = data_points[:50].copy()
 
 print("radius:", r)
@@ -287,12 +281,12 @@ def find_balls(data_points, s, radius):
         points_hat = []
 
         for j in range(len(data_points)):
-            print("current client:", j)
-            print("current center:", s[i])
+            #print("current client:", j)
+            #print("current center:", s[i])
 
-            print("client coordinate:", data_points[j])
-            print("center coordinate:", data_points[s[i]])
-            print("distance:", euclidean_distance(data_points[j], data_points[s[i]]))
+            #print("client coordinate:", data_points[j])
+            #print("center coordinate:", data_points[s[i]])
+            #print("distance:", euclidean_distance(data_points[j], data_points[s[i]]))
             if euclidean_distance(data_points[j], data_points[s[i]]) <= radius:
                 points.append(j)
             
@@ -300,7 +294,7 @@ def find_balls(data_points, s, radius):
                 points_hat.append(j)
         
         B.append(points)
-        print("points within reach of center:", points)
+        #print("points within reach of center:", points)
         B_hat.append(points_hat)
     
     return B, B_hat

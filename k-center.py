@@ -3,6 +3,7 @@ import scipy.optimize
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 import copy
+import random
 
 def euclidean_distance(x, y):
     return np.sqrt(np.sum((x - y)**2))
@@ -53,7 +54,9 @@ def plot_points_and_centers(points, centers):
 
 # Generate random points
 np.random.seed(42)
-data_points = np.random.rand(100, 2) * 100  # 100 points in a 100x100 grid
+all_points = np.random.rand(100, 2) * 100  # 100 points in a 100x100 grid
+data_points = random.sample(list(all_points), 10)
+print("data points:", data_points)
 
 # Number of centers
 k = 5
@@ -317,7 +320,7 @@ def online_k_center(points, k):
     radius_of_centers = np.zeros(len(x))
 
 
-    for t in range(50):
+    for t in range(len(points)):
 
         x_old = copy.deepcopy(x)
         
@@ -433,7 +436,7 @@ def online_k_center(points, k):
         print("all clients:", client_indices)
         while len(covered_points) < len(client_indices):
         # find the clients that are not covered by the current set of centers
-            uncovered = set(client_indices)- covered_points
+            uncovered = set(client_indices) - covered_points
             print("uncovered clients:", uncovered)
 
             j = next(iter(uncovered))
@@ -447,7 +450,10 @@ def online_k_center(points, k):
 
             for center_index in set_of_centers:
                 
-                if center_index != j and euclidean_distance(points[center_index], points[j]) <= radius_of_centers[j] + radius_of_centers[center_index] + delta * min(radius_of_centers[j], radius_of_centers[center_index]):
+                ball_dist = radius_of_centers[j] + radius_of_centers[center_index] + delta * min(radius_of_centers[j], radius_of_centers[center_index])
+                print("distance between two centers:", euclidean_distance(points[center_index], points[j]))
+                print("ball disj-radius:", ball_dist)
+                if center_index != j and euclidean_distance(points[center_index], points[j]) <= ball_dist:
                     set_of_centers.remove(center_index)
                     print("center {center_index} dropped", center_index)
 

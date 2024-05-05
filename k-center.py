@@ -8,7 +8,6 @@ def euclidean_distance(x, y):
     return np.sqrt(np.sum((x - y)**2))
 
 def calculate_diameter(points):
-    
     diameter = 0.0
     num_points = len(points)
     for i in range(num_points):
@@ -66,7 +65,7 @@ centers = offline_k_center(data_points, k)
 # This value used as input parameter in the online problem
 max_dist = max_distance_to_centers(data_points, centers)
 
-diam = calculate_diameter(data_points)
+diam_offline = calculate_diameter(data_points)
 
 # Plot the points and the selected centers
 #plot_points_and_centers(data_points, centers)
@@ -81,7 +80,6 @@ print("Maximum distance to nearest center:", max_dist)
 
 # define the radius for the ball to outline the covering/packing constraints
 beta = 1.5
-r = beta * max_dist
 
 epsilon = 0.25
 
@@ -212,7 +210,7 @@ def update_packing_variables(x, epsilon, k):
 ######################################### methods for k-center rounding ###########################################
 
 # set the parameters
-alpha = 3 + 3 * np.sqrt(2)
+alpha = 3 + 2 * np.sqrt(2)
 delta = np.sqrt(2)
 
 # testing on batches of data points
@@ -301,7 +299,7 @@ def k_center_rounding(x, data_points):
 
 ############################## main method for online positive-body chasing for k-center ##############################
 
-def online_k_center(points, k, r):
+def online_k_center(points, k):
 
     recourse = 0
 
@@ -319,7 +317,7 @@ def online_k_center(points, k, r):
     radius_of_centers = np.zeros(len(x))
 
 
-    for t in range(10):
+    for t in range(50):
 
         x_old = copy.deepcopy(x)
         
@@ -340,7 +338,16 @@ def online_k_center(points, k, r):
 
         print("current client:", points[t])
 
-        s = find_candidates(candidate_index, points, points[t], r)
+        # search for points within the radius of the current client
+        # the radius at each t is defined as: min(diam(t), beta * OPT(t))
+        diam = calculate_diameter(client_points)
+        centers_offline = offline_k_center(client_points, k)
+        current_OPT_dist = max_distance_to_centers(client_points, centers_offline)
+
+        print("diam(t):", diam)
+        print("curront_OPT(t):", current_OPT_dist)
+
+        s = find_candidates(candidate_index, points, points[t], min(beta * current_OPT_dist, diam))
         # update the covering constraint matrix
         #constraint_mat = update_constraints(constraint_mat, s, len(points))
 
@@ -372,8 +379,8 @@ def online_k_center(points, k, r):
         # OPT(t_i) is calculated using the offline algorithm
 
         # calculate OPT_offline for current active clients
-        centers_offline = offline_k_center(client_points, k)
-        current_OPT_dist = max_distance_to_centers(client_points, centers_offline)
+        #centers_offline = offline_k_center(client_points, k)
+        #current_OPT_dist = max_distance_to_centers(client_points, centers_offline)
         # diam = calculate_diameter(client_points)
 
         # find the points whose x value changed from 0 to 1 in this round
@@ -421,6 +428,7 @@ def online_k_center(points, k, r):
                 list_of_B_i_hat.append(B_i_hat)
         
         covered_points = set(item for sublist in list_of_B_i_hat for item in sublist)
+        print("\n")
         print("covered points:", covered_points)
         print("all clients:", client_indices)
         while len(covered_points) < len(client_indices):
@@ -450,6 +458,8 @@ def online_k_center(points, k, r):
                 # ball_set = set(item for sublist in B_hat for item in sublist)
                 list_of_B_i_hat.append(B_i_hat)
             covered_points = set(item for sublist in list_of_B_i_hat for item in sublist)
+        
+        print("all clients covered!")
         print("selected centers for this round:", set_of_centers)
 
     return x, recourse, set_of_centers
@@ -459,7 +469,7 @@ def online_k_center(points, k, r):
 ################################################### main ############################################################
 ##################################################################################################################### 
 
-fractional_sol, recourse, centers = online_k_center(data_points, k, r) 
+fractional_sol, recourse, centers = online_k_center(data_points, k) 
 
 print("\n")
 print("final fractional solution:", fractional_sol)

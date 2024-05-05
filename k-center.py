@@ -224,6 +224,7 @@ delta = np.sqrt(2)
 # this subroutine is called whenever the set S is updated
 def find_balls(data_points, clients, center_index, radius, radius_hat):
 
+    print("inside find_ball function")
     B_i = []
     B_i_hat =[]
 
@@ -236,6 +237,7 @@ def find_balls(data_points, clients, center_index, radius, radius_hat):
         #print("distance:", euclidean_distance(data_points[j], data_points[s[i]]))
         client_coordinate = clients[i][1]
         client_index = clients[i][0]
+        print("distance between client and center:", euclidean_distance(client_coordinate, data_points[center_index]))
         if euclidean_distance(client_coordinate, data_points[center_index]) <= radius:
             B_i.append(client_index)
             
@@ -393,11 +395,15 @@ def online_k_center(points, k, r):
         print("Rounding begins")
         print("current set of centers:", set_of_centers)
 
+        #list_of_B_i = []
         list_of_B_i_hat = []
-        for center in set_of_centers:
+        S = copy.deepcopy(set_of_centers)
+        for center in S:
             
+            print("\n")
             print("for center:", center)
             print("r_i of this center:", radius_of_centers[center])
+            print("r_i_hat of this center:", alpha * min(beta * current_OPT_dist, diam))
             
             B_i, B_i_hat = find_balls(points, clients, center, radius_of_centers[center], alpha * min(beta * current_OPT_dist, diam))
             
@@ -459,7 +465,7 @@ print("\n")
 print("final fractional solution:", fractional_sol)
 print("number of centers:", np.sum(fractional_sol))
 print("total recourse:", recourse)
-print("selected centers:", centers)
+print("final selected centers:", centers)
 
 
 

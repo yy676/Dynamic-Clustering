@@ -1,9 +1,11 @@
 import numpy as np
 import scipy.optimize
 import matplotlib.pyplot as plt
-from scipy.optimize import minimize
+from scipy.optimize import minimize, Bounds
 import copy
 import random
+import pulp as pl
+
 
 def euclidean_distance(x, y):
     return np.sqrt(np.sum((x - y)**2))
@@ -18,7 +20,50 @@ def calculate_diameter(points):
                 diameter = distance
     return diameter
 
-######################### offline algorithm to produce offline OPT distance #################################
+############################### offline algorithm to produce offline OPT distance #################################
+
+# fractional lp solver for offline k-center
+def offline_k_center_lp(points, num_centers):
+    num_points = len(points)
+    # Distance matrix
+    distances = np.sqrt(((points[:, np.newaxis] - points[np.newaxis, :]) ** 2).sum(axis=2))
+
+    # Number of centers
+    k = num_centers
+
+    # Create the LP problem
+    problem = pl.LpProblem("k-Median Problem", pl.LpMinimize)
+
+    # Decision variables
+    x = pl.LpVariable.dicts("x", (range(num_points), range(num_points)), lowBound=0, upBound=1, cat='Continuous')
+    y = pl.LpVariable.dicts("y", range(num_points), lowBound=0, upBound=1, cat='Continuous')
+
+    # Objective function
+    problem += pl.lpSum(x[i][j] * distances[i][j] for i in range(num_points) for j in range(num_points))
+
+    # Constraints
+    for i in range(num_points):
+        problem += pl.lpSum(x[i][j] for j in range(num_points)) == 1
+
+    for i in range(num_points):
+        for j in range(num_points):
+            problem += x[i][j] <= y[j]
+
+    problem += pl.lpSum(y[j] for j in range(num_points)) <= k
+
+    # Solve the problem
+    problem.solve()
+
+    if problem.status == pl.LpStatusOptimal:
+        print("Optimal cost:", pl.value(problem.objective))
+        for j in range(num_points):
+            if y[j].varValue > 0.01:  # Only consider y_j significant if > 0.01
+                print(f"Center at point {j} with y_{j} = {y[j].varValue:.2f}")
+                for i in range(num_points):
+                    if x[i][j].varValue > 0.01:
+                        print(f"  Point {i} assigned fractionally {x[i][j].varValue:.2f} to center {j}")
+
+
 def offline_k_center(points, k):
     # Initialize the first center randomly
     centers = [points[np.random.randint(len(points))]]
@@ -51,41 +96,12 @@ def plot_points_and_centers(points, centers):
     plt.grid(True)
     plt.show()
 
-
-# Generate random points
-np.random.seed(42)
-all_points = np.random.rand(100, 2) * 100  # 100 points in a 100x100 grid
-data_points = random.sample(list(all_points), 10)
-print("data points:", data_points)
-
-# Number of centers
-k = 5
-
-# Solve the offline k-center problem
-centers = offline_k_center(data_points, k)
-
-# Calculate the maximum distance to the nearest center
-# This value used as input parameter in the online problem
-max_dist = max_distance_to_centers(data_points, centers)
-
-diam_offline = calculate_diameter(data_points)
-
-# Plot the points and the selected centers
-#plot_points_and_centers(data_points, centers)
-
-print("Selected Centers:", centers)
-print("Maximum distance to nearest center:", max_dist)
-
-
-
 ####################################### online positive-body chasing for k-center ##################################################
 
-
-# define the radius for the ball to outline the covering/packing constraints
+# setting parameters needed for online algorithm
 beta = 1.5
 
 epsilon = 0.25
-
 
 ####################################### functions needed for main method ############################################################
 
@@ -145,7 +161,7 @@ def check_covering_feasibility(s, x):
 # covering objective function for solving x's
 def covering_objective(x, x_old, s, epsilon):
 
-    # we only deal with the x_i's whose coefficient c_i is nonzero
+   # we only deal with the x_i's whose coefficient c_i is nonzero
     prev_x_hat = np.zeros(len(s))
 
     for i in range(len(prev_x_hat)):
@@ -159,10 +175,16 @@ def covering_objective(x, x_old, s, epsilon):
 def packing_objective(x, x_old):
 
     # avoiding divide by zero
-    c = 1e-10
-    x_old = np.maximum(x_old, c)
+    #c = 1e-10
+    #x_old = np.maximum(x_old, c)
     
-    return np.sum(x * np.log(x/x_old) - x)
+    objective = 0
+    for i in range(len(x)):
+        if x_old[i] != 0:
+            objective += x[i] * np.log(x[i]/x_old[i]) - x[i]
+    
+    return objective
+    #return np.sum(x * np.log(x/x_old) - x)
 
 
 # covering constraint for solving x's
@@ -174,10 +196,13 @@ def covering_constraint(x):
 def packing_constraint(x, epsilon, k):
     return (1 + epsilon) * k - np.sum(x) 
 
+def positive_constraint(x):
+    return x 
+
 
 # optimize and update the values of x's when a covering constraint not satisfied
 def update_covering_variables(x, s, epsilon):
-    # start with x's at t-1
+   # start with x's at t-1
     x0 = np.zeros(len(s))
     for i in range(len(s)):
         x0[i] = x[s[i]]
@@ -200,32 +225,30 @@ def update_covering_variables(x, s, epsilon):
 # optimize and update the values of x's when a packing constraint not satisfied
 def update_packing_variables(x, epsilon, k):
     
-    cons = {'type': 'ineq', 'fun':packing_constraint, 'args':(epsilon, k)}
+    cons = [{'type': 'ineq', 'fun':packing_constraint, 'args':(epsilon, k)},
+            {'type': 'ineq', 'fun':positive_constraint}]
 
     x0 = x
 
-    result = minimize(packing_objective, x0, args=(x), constraints=cons, method='SLSQP')
+    bounds = Bounds(0, np.inf)
+
+    result = minimize(packing_objective, x0, args=(x), constraints=cons, method='SLSQP', bounds=bounds)
 
     print("updated fraction solutions after packing violation:", result.x)
 
     return result.x
 
-######################################### methods for k-center rounding ###########################################
+######################################### helper for rounding ###########################################
 
-# set the parameters
+# set the parameters for rounding
 alpha = 3 + 2 * np.sqrt(2)
 delta = np.sqrt(2)
-
-# testing on batches of data points
-#data_points = data_points[:50].copy()
-
-#print("radius:", r)
 
 # subroutine to find the balls B_i and B_hait_i for a given center_index
 # this subroutine is called whenever the set S is updated
 def find_balls(data_points, clients, center_index, radius, radius_hat):
 
-    print("inside find_ball function")
+    #print("inside find_ball function")
     B_i = []
     B_i_hat =[]
 
@@ -238,73 +261,23 @@ def find_balls(data_points, clients, center_index, radius, radius_hat):
         #print("distance:", euclidean_distance(data_points[j], data_points[s[i]]))
         client_coordinate = clients[i][1]
         client_index = clients[i][0]
-        print("distance between client and center:", euclidean_distance(client_coordinate, data_points[center_index]))
+        #print("distance between client and center:", euclidean_distance(client_coordinate, data_points[center_index]))
         if euclidean_distance(client_coordinate, data_points[center_index]) <= radius:
             B_i.append(client_index)
             
         if euclidean_distance(client_coordinate, data_points[center_index]) <= radius_hat:
             B_i_hat.append(client_index)
 
-    print("points in B_i:", B_i)
-    print("points in B_i_hat:", B_i_hat)
+    #print("points in B_i:", B_i)
+    #print("points in B_i_hat:", B_i_hat)
     
     return B_i, B_i_hat
 
-########################################### the main rounding routine #############################################
-
-
-'''
-def k_center_rounding(x, data_points):
-    
-    # collect the indices of points whose x values are not zero
-    s = []
-    s = np.nonzero(x)
-    s = list(s[0])
-
-    print("initial set of centers:", s)
-
-    B, B_hat = find_balls(data_points, s, r)
-
-    for i in range(len(s)):
-        points_in_reach = B[i]
-        print("current center for mass:", s[i])
-        print("mass for current center ball:", np.sum(x[points_in_reach]))
-
-        if np.sum(x[points_in_reach]) < 1 - epsilon:
-            s.remove(s[i])
-            B_hat.remove(B_hat[i])
-    
-    print("updated set of centers:", s)
-    
-    ball_set = set(item for sublist in B_hat for item in sublist)
-
-    print("points covered:", ball_set)
-
-    while len(ball_set) < len(data_points):
-        # find the clients that are not covered by the current set of centers
-        uncovered = set(range(0, len(data_points))) - ball_set
-
-        j = next(iter(uncovered))
-        s.append(j)
-        #ball_set.append(j)
-
-        for center_index in s:
-            if center_index != j and euclidean_distance(data_points[center_index], data_points[j]) <= 2 * r + delta * r:
-                s.remove(center_index)
-
-        # update the balls
-        B, B_hat = find_balls(data_points, s, r)
-        ball_set = set(item for sublist in B_hat for item in sublist)
-
-    return s
-'''
-
-
-############################## main method for online positive-body chasing for k-center ##############################
+###################################### main method for online k-center #######################################
 
 def online_k_center(points, k):
 
-    recourse = 0
+    total_recourse = 0
 
     # initialize the vector x with all 0s of dimension len(points)
     x, candidate_index, candidates, constraint_mat = initialization(points)
@@ -315,10 +288,8 @@ def online_k_center(points, k):
     client_points = []
     client_indices = []
 
-
     set_of_centers = []
     radius_of_centers = np.zeros(len(x))
-
 
     for t in range(len(points)):
 
@@ -335,6 +306,7 @@ def online_k_center(points, k):
         client_points.append(points[t])
         client_indices.append(t)
 
+        
         print("\n")
         
         print("time t:", t)
@@ -367,13 +339,11 @@ def online_k_center(points, k):
             print("packing constraint violated!")
             x_new = update_packing_variables(x, epsilon, k)
 
-        
         # update total recourse in l1-norm
         print("recourse in this round:", np.sum(np.abs(x_new - x_old)))
 
-        recourse += np.sum(np.abs(x_new - x_old))
+        total_recourse += np.sum(np.abs(x_new - x_old))
         x = x_new
-
         
         #################################### rounding procedure begins from here ####################################
         # integrate rounding at each round
@@ -385,17 +355,6 @@ def online_k_center(points, k):
         #centers_offline = offline_k_center(client_points, k)
         #current_OPT_dist = max_distance_to_centers(client_points, centers_offline)
         # diam = calculate_diameter(client_points)
-
-        # find the points whose x value changed from 0 to 1 in this round
-        # This means this point is added as a center
-        # calculate its radius r(t, i) = min(beta * current_OPT_dist, Delta)
-        '''
-        for i in range(len(x)):
-            if x_new[i] - x_old[i] == 1:
-                set_of_centers.append(i)
-                current_r = np.min(beta * current_OPT_dist, diam)
-                radius_of_centers[i] = current_r
-        '''
         
         # identify the balls/set of points that are B_i and B_i_hat for each i in set_of_centers
         # while building the balls B_i, drop any i from set_of_centers if it has mass less than 1-epsilon
@@ -441,7 +400,6 @@ def online_k_center(points, k):
 
             j = next(iter(uncovered))
             set_of_centers.append(j)
-            #ball_set.append(j)
             # record current_radius
             current_r = min(beta * current_OPT_dist, diam)
             radius_of_centers[j] = current_r
@@ -451,8 +409,8 @@ def online_k_center(points, k):
             for center_index in set_of_centers:
                 
                 ball_dist = radius_of_centers[j] + radius_of_centers[center_index] + delta * min(radius_of_centers[j], radius_of_centers[center_index])
-                print("distance between two centers:", euclidean_distance(points[center_index], points[j]))
-                print("ball disj-radius:", ball_dist)
+                #print("distance between two centers:", euclidean_distance(points[center_index], points[j]))
+                #print("ball disj-radius:", ball_dist)
                 if center_index != j and euclidean_distance(points[center_index], points[j]) <= ball_dist:
                     set_of_centers.remove(center_index)
                     print("center {center_index} dropped", center_index)
@@ -461,27 +419,61 @@ def online_k_center(points, k):
             list_of_B_i_hat = []
             for center in set_of_centers:
                 B_i, B_i_hat = find_balls(points, clients, center, radius_of_centers[center], alpha * min(beta * current_OPT_dist, diam))
-                # ball_set = set(item for sublist in B_hat for item in sublist)
                 list_of_B_i_hat.append(B_i_hat)
             covered_points = set(item for sublist in list_of_B_i_hat for item in sublist)
         
         print("all clients covered!")
         print("selected centers for this round:", set_of_centers)
 
-    return x, recourse, set_of_centers
+    return x, total_recourse, set_of_centers
+
 
 
 #####################################################################################################################
 ################################################### main ############################################################
 ##################################################################################################################### 
 
+## parse inputs
+# Generate random points
+np.random.seed(42)
+all_points = np.random.rand(100, 2) * 100  # 100 points in a 100x100 grid
+data_points = random.sample(list(all_points), 50)
+#print("data points:", data_points)
+
+# Number of centers
+k = 5
+
+# Solve the offline k-center problem
+centers = offline_k_center(data_points, k)
+
+# Calculate the maximum distance to the nearest center
+# This value used as input parameter in the online problem
+max_dist = max_distance_to_centers(data_points, centers)
+
+diam_offline = calculate_diameter(data_points)
+
+'''
+print("fractional lp solution:")
+data_list = np.array([list(p) for p in data_points])
+print("data list:", data_list)
+offline_k_center_lp(data_list, k)
+'''
+
+# Plot the points and the selected centers
+#plot_points_and_centers(data_points, centers)
+
+
+print("Selected Centers:", centers)
+print("Maximum distance to nearest center:", max_dist)
+
+# begin online algorithm
 fractional_sol, recourse, centers = online_k_center(data_points, k) 
 
-print("\n")
 print("final fractional solution:", fractional_sol)
 print("number of centers:", np.sum(fractional_sol))
 print("total recourse:", recourse)
 print("final selected centers:", centers)
+
 
 
 

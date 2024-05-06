@@ -437,7 +437,7 @@ def online_k_center(points, k):
 # Generate random points
 np.random.seed(42)
 all_points = np.random.rand(100, 2) * 100  # 100 points in a 100x100 grid
-data_points = random.sample(list(all_points), 50)
+data_points = random.sample(list(all_points), 100)
 #print("data points:", data_points)
 
 # Number of centers

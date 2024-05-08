@@ -203,12 +203,20 @@ def update_packing_variables(x, epsilon, k):
 # we use the closed form with the lagrange multiplier here
 def update_covering(x, s, epsilon):
     d = len(s)
-    log_term = (epsilon/4 + 1) / (np.sum(x[s] + epsilon / 4))
+    log_term = (epsilon/4 + 1) / (np.sum(x[s]) + epsilon / 4)
+    if log_term < 1:
+        print("log term value:", log_term)
+        print("x_(t - 1): ", x[s])
+        print("d: ", d)
+        print("sum of x[s]:", np.sum(x[s]))
+        print("denominator of log term:", np.sum(x[s]) + epsilon / 4)
+        print("nominator of log term:", epsilon / 4 + 1)
 
-    if log_term > 0:
+    if log_term > 1:
         y = np.log(log_term)
-        x[s] = (x[s] + epsilon / (4 * d)) * np.exp(y) 
-    
+        print("y values:", y)
+        x[s] = (x[s] + epsilon / (4 * d)) * np.exp(y) - (epsilon / (4 * d))
+
     return x
 
 
@@ -224,6 +232,7 @@ def update_packing(x, epsilon, k):
         neg_z = np.log(((1 + epsilon) * k) / log_term_bottom)
         x = x * np.exp(neg_z)
     
+    #print("Updated solution from closed form:", x)
     return x
 
 
@@ -349,6 +358,8 @@ def online_k_center(points, k):
     P_list = []
     violated_covering_t = []
     violated_packing_t = []
+
+    #x_closed = np.zeros(len(x))
          
     for t in range(len(points)):
 
@@ -392,7 +403,9 @@ def online_k_center(points, k):
             #print("Solving covering constraints...")
             C_list.append(s)
             violated_covering_t.append(t)
-            x_new = update_covering_variables(x, s, epsilon)
+            x_new = update_covering(x, s, epsilon)
+            #x_closed = update_covering(x_closed, s, epsilon)
+            print("updated solution from closed-form (covering):", x_new)
         else:
             # no covering constraints are violated, add empty list at row t 
             C_list.append([])
@@ -405,7 +418,9 @@ def online_k_center(points, k):
             p_vector = np.ones(t)
             P_list.append(p_vector)
             violated_packing_t.append(t)
-            x_new = update_packing_variables(x, epsilon, k)
+            x_new = update_packing(x, epsilon, k)
+            #x_closed = update_packing(x, epsilon, k)
+            print("updated solution from closed-form (packing):", x_new)
         else:
             P_list.append([])
         

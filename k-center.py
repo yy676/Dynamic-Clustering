@@ -198,6 +198,35 @@ def update_packing_variables(x, epsilon, k):
 
     return result.x
 
+
+# alternative method to update x's when a covering violation occurs
+# we use the closed form with the lagrange multiplier here
+def update_covering(x, s, epsilon):
+    d = len(s)
+    log_term = (epsilon/4 + 1) / (np.sum(x[s] + epsilon / 4))
+
+    if log_term > 0:
+        y = np.log(log_term)
+        x[s] = (x[s] + epsilon / (4 * d)) * np.exp(y) 
+    
+    return x
+
+
+# alternative method to update x's when a packing violation occurs
+# similarly, we also use the closed form here
+def update_packing(x, epsilon, k):
+    log_term_bottom = 0
+    for i in range(len(x)):
+        if x[i] > 0:
+            log_term_bottom += x[i]
+    
+    if log_term_bottom > 0:
+        neg_z = np.log(((1 + epsilon) * k) / log_term_bottom)
+        x = x * np.exp(neg_z)
+    
+    return x
+
+
 ############################ method used to compute OPT_rec at time t #################################
 
 # arguments: 

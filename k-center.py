@@ -106,6 +106,7 @@ def find_candidates(candidate_indices, points, client, radius):
     #print("candidates within radius:", s)
     return s
 
+
 # check if new client's constraint is satisfied
 def check_covering_feasibility(s, x):
     # check if the covering constraint is satisfied
@@ -116,7 +117,7 @@ def check_covering_feasibility(s, x):
     else:
         return False
 
-
+'''
 # covering objective function for solving x's
 def covering_objective(x, x_old, s, epsilon):
 
@@ -197,6 +198,7 @@ def update_packing_variables(x, epsilon, k):
     #print("updated fraction solutions after packing violation:", result.x)
 
     return result.x
+'''
 
 
 # alternative method to update x's when a covering violation occurs
@@ -204,17 +206,10 @@ def update_packing_variables(x, epsilon, k):
 def update_covering(x, s, epsilon):
     d = len(s)
     log_term = (epsilon/4 + 1) / (np.sum(x[s]) + epsilon / 4)
-    if log_term < 1:
-        print("log term value:", log_term)
-        print("x_(t - 1): ", x[s])
-        print("d: ", d)
-        print("sum of x[s]:", np.sum(x[s]))
-        print("denominator of log term:", np.sum(x[s]) + epsilon / 4)
-        print("nominator of log term:", epsilon / 4 + 1)
 
     if log_term > 1:
         y = np.log(log_term)
-        print("y values:", y)
+        #print("y values:", y)
         x[s] = (x[s] + epsilon / (4 * d)) * np.exp(y) - (epsilon / (4 * d))
 
     return x
@@ -251,40 +246,52 @@ def compute_OPT_rec(C, P, covering_t, packing_t, t, k, epsilon):
 
     # Problem data and parameters
     T = t + 1  # Number of time periods
-    n = t + 1  # Number of variables per period
+    n = t + 1  # Number of variables per period (might be different from T in dynamic streaming)
     #weights = {t: [1]*n for t in range(0, T)}  # Example weights
 
     # Create the LP problem object
     lp_prob = pulp.LpProblem("OPT_recourse", pulp.LpMinimize)
 
     # Decision variables x_i^t and l_i^t
-    x = pulp.LpVariable.dicts("x", (range(n), range(T)), lowBound=0)
-    l = pulp.LpVariable.dicts("l", (range(n), range(T)), lowBound=0)
+    x = pulp.LpVariable.dicts("x", (range(T), range(n)), lowBound=0)
+    l = pulp.LpVariable.dicts("l", (range(T), range(n)), lowBound=0)
 
     # Objective function
-    lp_prob += pulp.lpSum(l[i][t] for t in range(T) for i in range(n))
+    lp_prob += pulp.lpSum(l[t][i] for i in range(n) for t in range(T))
 
     # Constraints
     for t in covering_t:
         subset_indices = C[t]
         #print("violating covering constraint(subset of indices):", subset_indices)
-        lp_prob += pulp.lpSum(x[i][t] for i in subset_indices) >= 1, f"CoverageConstraint_{t}"
+        lp_prob += pulp.lpSum(x[t][i] for i in subset_indices) >= 1, f"CoverageConstraint_{t}"
     for t in packing_t:
-        lp_prob += pulp.lpSum(x[i][t] for i in range(n)) <= (1 + epsilon) * k, f"PerformanceConstraint_{t}"
+        lp_prob += pulp.lpSum(x[t][i] for i in range(n)) <= (1 + epsilon) * k, f"PerformanceConstraint_{t}"
     for i in range(n):
-        lp_prob += x[i][0] <= l[i][0]
+        # include the recourse at t = 0
+        lp_prob += x[0][i] <= l[0][i]
     for t in range(1, T):
         for i in range(n):
-            lp_prob += (x[i][t] - x[i][t-1]) <= l[i][t], f"ChangeConstraint_Pos_{t}_{i}"
-            lp_prob += (x[i][t-1] - x[i][t]) <= l[i][t], f"ChangeConstraint_Neg_{t}_{i}"
+            lp_prob += (x[t][i] - x[t-1][i]) <= l[t][i], f"ChangeConstraint_Pos_{t}_{i}"
+            lp_prob += (x[t-1][i] - x[t][i]) <= l[t][i], f"ChangeConstraint_Neg_{t}_{i}"
 
     # Solve the problem
     lp_prob.solve(pulp.PULP_CBC_CMD(msg=False))
 
     # Output results
     #print("Status:", pulp.LpStatus[lp_prob.status])
-    #for var in lp_prob.variables():
-        #print(f"{var.name} = {var.varValue}")
+
+    # print out the x and l matrices for debugging
+    x_mat = np.zeros((T, n))
+    l_mat = np.zeros((T, n))
+
+    for i in range(T):
+        for j in range(n):
+            x_mat [i, j] = x[i][j].varValue
+            l_mat[i, j] = l[i][j].varValue
+    
+    #print("X: \n", x_mat)
+    #print("l: \n", l_mat)
+
     #print("Total OPT_recourse = ", pulp.value(lp_prob.objective))
     return pulp.value(lp_prob.objective)
 
@@ -404,8 +411,7 @@ def online_k_center(points, k):
             C_list.append(s)
             violated_covering_t.append(t)
             x_new = update_covering(x, s, epsilon)
-            #x_closed = update_covering(x_closed, s, epsilon)
-            print("updated solution from closed-form (covering):", x_new)
+            #print("updated solution from closed-form (covering):", x_new)
         else:
             # no covering constraints are violated, add empty list at row t 
             C_list.append([])
@@ -419,15 +425,14 @@ def online_k_center(points, k):
             P_list.append(p_vector)
             violated_packing_t.append(t)
             x_new = update_packing(x, epsilon, k)
-            #x_closed = update_packing(x, epsilon, k)
-            print("updated solution from closed-form (packing):", x_new)
+            #print("updated solution from closed-form (packing):", x_new)
         else:
             P_list.append([])
         
         OPT_recourse = compute_OPT_rec(C_list, P_list, violated_covering_t, violated_packing_t, t, k, epsilon)
 
         # update total recourse in l1-norm
-        #print("recourse in this round:", np.sum(np.abs(x_new - x_old)))
+        #print("online recourse in this round:", np.sum(np.abs(x_new - x_old)))
 
         total_recourse += np.sum(np.abs(x_new - x_old))
         #print("total online recourse so far:", total_recourse)
@@ -560,11 +565,23 @@ print("-----------final online results-----------")
 print("k = ", k)
 print("beta = ", beta)
 print("epsilon = ", epsilon)
-print("final fractional solution:", fractional_sol)
+#print("final fractional solution:", fractional_sol)
 print("number of centers (sum of fractional x's):", np.sum(fractional_sol))
 print("OPT recourse:", OPT_rec)
 print("total online recourse:", recourse)
 print("final selected centers:", centers)
+
+center_coordinates = random.sample(list(all_points), len(centers))
+max_online_dist = max_distance_to_centers(data_points, center_coordinates)
+
+
+for i in range(len(centers)):
+    center_coordinates[i] = data_points[centers[i]]
+#plot_points_and_centers(data_points, center_coordinates)
+
+print("max online distance:", max_online_dist)
+
+print("alpha * beta * offline max distance:", alpha * beta * max_dist)
 
 
 

@@ -54,10 +54,24 @@ def plot_points_and_centers(points, centers):
     plt.grid(True)
     plt.show()
 
+def plot_points(points):
+    plt.figure(figsize=(8, 6))
+    x, y = zip(*points)
+    #cx, cy = zip(*centers)
+    
+    plt.scatter(x, y, color='blue', label='Points')
+    #plt.scatter(cx, cy, color='red', s=100, label='Centers', edgecolors='black')
+    plt.title("Offline k-Center Clustering")
+    plt.xlabel("X coordinate")
+    plt.ylabel("Y coordinate")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
 ####################################### online positive-body chasing for k-center ##################################################
 
 # setting parameters needed for online algorithm
-beta = 1.25
+beta = 1
 
 epsilon = 0.25
 
@@ -384,7 +398,7 @@ def online_k_center(points, k):
         client_indices.append(t)
 
         #print("\n")
-        #print("time t:", t)
+        #print("---------time t:---------", t)
         #print("current client:", points[t])
 
         # search for points within the radius of the current client
@@ -437,6 +451,8 @@ def online_k_center(points, k):
         total_recourse += np.sum(np.abs(x_new - x_old))
         #print("total online recourse so far:", total_recourse)
         x = x_new
+
+        #print("fractional solution this round:", x)
         
         #################################### rounding procedure begins from here ####################################
         # integrate rounding at each round
@@ -478,7 +494,7 @@ def online_k_center(points, k):
 
             if mass < 1 - epsilon:
                 set_of_centers.remove(center)
-                #print("center dropped from set")
+                #print("center dropped from set:", center)
             else:
                 list_of_B_i_hat.append(B_i_hat)
         
@@ -498,6 +514,7 @@ def online_k_center(points, k):
             radius_of_centers[j] = current_r
 
             #print("new center added to set:", j)
+            #print("With radius_i:", current_r)
 
             for center_index in set_of_centers:
                 
@@ -528,12 +545,32 @@ def online_k_center(points, k):
 ## parse inputs
 # Generate random points
 np.random.seed(42)
-all_points = np.random.rand(100, 2) * 100  # 100 points in a 100x100 grid
+all_points = np.random.rand(200, 2) * 100  # 100 points in a 100x100 grid
 data_points = random.sample(list(all_points), 100)
-#print("data points:", data_points)
+#plot_points(data_points)
+
+'''
+#feed input points as clusters for alternative testing
+x_coordinates_1 = np.random.uniform(0, 50, 50)
+y_coordinates_1 = np.random.uniform(50, 100, 50)
+#data_points[0:49] = np.column_stack((x_coordinates_1, y_coordinates_1))
+#plot_points(data_points[0:49])
+
+x_coordinates_2 = np.random.uniform(50, 100, 50)
+y_coordinates_2 = np.random.uniform(50, 100, 50)
+#data_points[50:99] = np.column_stack((x_coordinates_2, y_coordinates_2))
+
+x_coordinates_3 = np.random.uniform(0, 50, 50)
+y_coordinates_3 = np.random.uniform(0, 50, 50)
+#data_points[100:149] = np.column_stack((x_coordinates_3, y_coordinates_3))
+
+x_coordinates_4 = np.random.uniform(50, 100, 50)
+y_coordinates_4 = np.random.uniform(0, 50, 50)
+#data_points[150:199] = np.column_stack((x_coordinates_4, y_coordinates_4))
+'''
 
 # Number of centers
-k = 5
+k = 4
 
 # Solve the offline k-center problem
 centers = offline_k_center(data_points, k)

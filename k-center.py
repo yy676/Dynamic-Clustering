@@ -124,10 +124,16 @@ def covering_objective(x, x_old, s, epsilon):
     prev_x_hat = np.zeros(len(s))
 
     for i in range(len(prev_x_hat)):
-        prev_x_hat[i] = x_old[s[i]] + epsilon/(4*len(s))
+        prev_x_hat[i] = x_old[s[i]] + epsilon/(4 * len(s))
     
-    #prev_x = np.zeros(len(s))
-    return np.sum((x + epsilon/(4*len(s))) * np.log((x + epsilon/(4*len(s)))/prev_x_hat) - (x + epsilon/(4*len(s))))
+    x_adj = x + epsilon / (4 * len(s)) 
+    
+    with np.errstate(divide='ignore', invalid='ignore'):
+        ratio = x_adj / prev_x_hat
+        where_valid = prev_x_hat > 0
+        log_term = np.where(where_valid, np.log(np.maximum(ratio, 1e-10)), 0)
+
+    return np.sum(x_adj * log_term - x_adj)
 
 
 # packing objective function for solving x's
@@ -478,7 +484,7 @@ data_points = random.sample(list(all_points), 100)
 #print("data points:", data_points)
 
 # Number of centers
-k = 4
+k = 5
 
 # Solve the offline k-center problem
 centers = offline_k_center(data_points, k)

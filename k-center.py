@@ -183,6 +183,7 @@ epsilon = 0.25
 
 ####################################### functions needed for main method ############################################################
 
+'''
 # initialization for online_k_center
 def initialization(points):
     x = np.zeros(len(points))
@@ -214,16 +215,18 @@ def update_constraints(C,s, n):
     
     return C
 
+'''
 # find all points within the radius of the current client
 # this step can be thought of as updating the covering constraint
 def find_candidates(candidate_indices, points, client, radius):
     s = []
+    print("candidate set:", candidate_indices)
     for index in candidate_indices:
         #print("index in candidate_indicies:", index)
         if euclidean_distance(points[int(index)], client) <= radius:
             s.append(int(index))
     
-    #print("candidates within radius:", s)
+    print("candidates within radius:", s)
     return s
 
 
@@ -383,7 +386,7 @@ def compute_OPT_rec(C, P, covering_t, packing_t, t, k, epsilon):
         #print("violating covering constraint(subset of indices):", subset_indices)
         lp_prob += pulp.lpSum(x[t][i] for i in subset_indices) >= 1, f"CoverageConstraint_{t}"
     for t in packing_t:
-        lp_prob += pulp.lpSum(x[t][i] for i in range(n)) <= (1 + epsilon) * k, f"PerformanceConstraint_{t}"
+        lp_prob += pulp.lpSum(x[t][i] for i in P[t]) <= (1 + epsilon) * k, f"PerformanceConstraint_{t}"
     for i in range(n):
         # include the recourse at t = 0
         lp_prob += x[0][i] <= l[0][i]
@@ -452,12 +455,12 @@ def find_balls(data_points, clients, center_index, radius, radius_hat):
 
 ###################################### main method for online k-center #######################################
 
-def online_k_center(points, k):
+def online_k_center(requests, points, k):
 
     total_recourse = 0
 
     # initialize the vector x with all 0s of dimension len(points)
-    x, candidate_index, candidates, constraint_mat = initialization(points)
+    x = np.zeros(len(points))
 
     # store each client as a tuple (index in points, coordinates)
     clients = []
@@ -486,25 +489,58 @@ def online_k_center(points, k):
     violated_packing_t = []
 
     #x_closed = np.zeros(len(x))
-         
-    for t in range(len(points)):
+
+    t = 0  # for indexing the data points     
+    for r in range(len(requests)):
 
         x_old = copy.deepcopy(x)
+
+        print("\n")
+        print("---------request:", r)
         
         # at each iteration if the request is an insertion,
         # add new client to the set of points that are known 
-        candidate_index = np.append(candidate_index, int(t))
-        candidates = np.append(candidates, points[t])
+        #candidate_index = np.append(candidate_index, int(t))
+        #candidates = np.append(candidates, points[t])
+        if requests[r] == -1:
+            # random sample an active client to 
+            if len(client_indices) and len(client_indices) > len(set_of_centers) > 0:
+                client_to_remove = random.randint(0, t)
+                while client_to_remove in set_of_centers and client_to_remove not in client_indices:
+                    client_to_remove = random.randint(0, t)
+                
+                x[client_to_remove] = 0
+                #print(client_indices)
+                #print("client to remove:", client_to_remove)
+                if client_to_remove in client_indices:
+                    client_indices.remove(client_to_remove)
+                
+                item_to_remove = points[client_to_remove]
+                for i in range(len(client_points)):
+                    if np.array_equal(client_points[i], item_to_remove):
+                        client_points.pop(i)
+                        break
 
-        # variables for rounding
+                for client in clients:
+                    if client[0] == client_to_remove:
+                        clients.remove(client)
+                print("removal request")
+                print("client removed:", client_to_remove)
+            continue
+        
+        # the request is an insertion, add the new client and deal with any constraint violations
+        # set of active clients
         current_client = (t, points[t])
         clients.append(current_client)
         client_points.append(points[t])
+        print(client_points)
         client_indices.append(t)
-
+        print(client_indices)
+        
+        
         #print("\n")
-        #print("---------time t:---------", t)
-        #print("current client:", points[t])
+        print("t= ", t)
+        print("current client:", points[t])
 
         # search for points within the radius of the current client
         # the radius at each t is defined as: min(diam(t), beta * OPT(t))
@@ -513,9 +549,9 @@ def online_k_center(points, k):
         current_OPT_dist = lp_relaxation_k_center(client_points, k)
 
         #print("diam(t):", diam)
-        #print("curront_OPT_dist:", current_OPT_dist)
+        print("curront_OPT_dist:", current_OPT_dist)
 
-        s = find_candidates(candidate_index, points, points[t], min(beta * current_OPT_dist, diam))
+        s = find_candidates(client_indices, points, points[t], min(beta * current_OPT_dist, diam))
         # update the covering constraint matrix
         #constraint_mat = update_constraints(constraint_mat, s, len(points))
 
@@ -539,9 +575,8 @@ def online_k_center(points, k):
         # if so, update the values of x's
         if (np.sum(x) > (1+epsilon) * k):
             #print("Solving packing constraints")
-            # p(t) will just be an all 1 vector of length t
-            p_vector = np.ones(t)
-            P_list.append(p_vector)
+            # the packing constraint takes the sum over all active clients
+            P_list.append(client_indices)
             violated_packing_t.append(t)
             x_new = update_packing(x, epsilon, k)
             #print("updated solution from closed-form (packing):", x_new)
@@ -588,7 +623,7 @@ def online_k_center(points, k):
             #print("r_i of this center:", radius_of_centers[center])
             #print("r_i_hat of this center:", alpha * min(beta * current_OPT_dist, diam))
             
-            B_i, B_i_hat = find_balls(points, clients, center, radius_of_centers[center], alpha * min(beta * current_OPT_dist, diam))
+            B_i, B_i_hat = find_balls(client_points, clients, center, radius_of_centers[center], alpha * min(beta * current_OPT_dist, diam))
             
             # drop any B_i whose mass is too small
             mass = 0
@@ -640,6 +675,8 @@ def online_k_center(points, k):
         #print("all clients covered!")
         #print("selected centers for this round:", set_of_centers)
 
+        t += 1
+
     return x, total_recourse, set_of_centers, OPT_recourse
 
 
@@ -651,9 +688,21 @@ def online_k_center(points, k):
 # Generate random points
 np.random.seed(42)
 all_points = np.random.rand(200, 2) * 100  # 100 points in a 100x100 grid
-data_points = random.sample(list(all_points), 100)
+data_points = random.sample(list(all_points), 20)
 #plot_points(data_points)
 #print(data_points)
+
+# We'll add 20% of the amout of data to be removal requests
+# to simulate dynamic streaming.
+# For simplicity, whenever we encounter a removal request,
+# we randomly sample an active client point that is not in the set of centers
+# In our request array. a +1 indicates an insertion of a client;
+# -1 indicates a removal.
+requests = np.ones(int(len(data_points) * 1.2))
+removals = np.random.choice(range(0, len(data_points)+ 1), int(len(data_points)*0.2), replace=False)
+#print(removals)
+requests[removals] = -1
+#print(requests)
 
 '''
 #feed input points as clusters for alternative testing
@@ -713,7 +762,7 @@ for i in range(num_points):
 #print("Optimal maximum distance from binary search:", optimal_z)
 
 # begin online algorithm
-fractional_sol, recourse, centers, OPT_rec = online_k_center(data_points, k) 
+fractional_sol, recourse, centers, OPT_rec = online_k_center(requests, data_points, k) 
 
 print("-----------final online results-----------")
 print("k = ", k)

@@ -33,6 +33,57 @@ def offline_k_center(points, k):
     
     return centers
 
+def lp_relaxation_k_center(points, k):
+    num_points = len(points)
+    prob = pulp.LpProblem("k_Center", pulp.LpMinimize)
+
+    # populate distance matrix
+    dist_mat = np.zeros((num_points, num_points))
+    for i in range(num_points):
+        for j in range(num_points):
+            dist_mat[i, j] = euclidean_distance(points[i], points[j])
+    
+    #print("distance matrix:\n", dist_mat)
+
+    # Variables
+    x = pulp.LpVariable.dicts("x", (range(num_points), range(num_points)), lowBound=0, upBound=1, cat=pulp.LpContinuous)
+    y = pulp.LpVariable.dicts("y", range(num_points), lowBound=0, upBound=1, cat=pulp.LpContinuous)
+    z = pulp.LpVariable("z", lowBound=0, cat=pulp.LpContinuous)
+
+    # Objective
+    prob += z, "Maximum distance to nearest center"
+
+    # Constraints
+    for i in range(num_points):
+        prob += pulp.lpSum(x[i][j] for j in range(num_points)) == 1, f"Assign_{i}"
+        for j in range(num_points):
+            prob += x[i][j] <= y[j], f"Link_{i}_{j}"
+            prob += euclidean_distance(points[i], points[j]) * x[i][j] <= z, f"Distance_{i}_{j}"
+
+    prob += pulp.lpSum(y[j] for j in range(num_points)) == k, "Number_of_centers"
+
+    # Solve the problem
+    prob.solve(pulp.PULP_CBC_CMD(msg=False))
+
+    # Print the results
+    #print("Status:", pulp.LpStatus[prob.status])
+    #print("The minimized maximum distance z is:", pulp.value(z))
+    
+    '''
+    print("y[j] values:")
+    for j in range(num_points):
+        print(f"y[{j}] = {y[j].varValue}")
+    '''
+    # print out the x and l matrices for debugging
+    x_mat = np.zeros((num_points, num_points))
+    for i in range(num_points):
+        for j in range(num_points):
+            x_mat [i, j] = x[i][j].varValue
+    #print("x_mat:\n", x_mat)
+    
+    return pulp.value(z)
+
+
 def max_distance_to_centers(points, centers):
     max_dist = 0
     for point in points:
@@ -71,7 +122,7 @@ def plot_points(points):
 ####################################### online positive-body chasing for k-center ##################################################
 
 # setting parameters needed for online algorithm
-beta = 1
+beta = 2
 
 epsilon = 0.25
 
@@ -223,7 +274,6 @@ def update_covering(x, s, epsilon):
 
     if log_term > 1:
         y = np.log(log_term)
-        #print("y values:", y)
         x[s] = (x[s] + epsilon / (4 * d)) * np.exp(y) - (epsilon / (4 * d))
 
     return x
@@ -241,7 +291,6 @@ def update_packing(x, epsilon, k):
         neg_z = np.log(((1 + epsilon) * k) / log_term_bottom)
         x = x * np.exp(neg_z)
     
-    #print("Updated solution from closed form:", x)
     return x
 
 
@@ -294,6 +343,7 @@ def compute_OPT_rec(C, P, covering_t, packing_t, t, k, epsilon):
     # Output results
     #print("Status:", pulp.LpStatus[lp_prob.status])
 
+    '''
     # print out the x and l matrices for debugging
     x_mat = np.zeros((T, n))
     l_mat = np.zeros((T, n))
@@ -307,6 +357,7 @@ def compute_OPT_rec(C, P, covering_t, packing_t, t, k, epsilon):
     #print("l: \n", l_mat)
 
     #print("Total OPT_recourse = ", pulp.value(lp_prob.objective))
+    '''
     return pulp.value(lp_prob.objective)
 
 
@@ -404,8 +455,8 @@ def online_k_center(points, k):
         # search for points within the radius of the current client
         # the radius at each t is defined as: min(diam(t), beta * OPT(t))
         diam = calculate_diameter(client_points)
-        centers_offline = offline_k_center(client_points, k)
-        current_OPT_dist = max_distance_to_centers(client_points, centers_offline)
+        #centers_offline = offline_k_center(client_points, k)
+        current_OPT_dist = lp_relaxation_k_center(client_points, k)
 
         #print("diam(t):", diam)
         #print("curront_OPT_dist:", current_OPT_dist)
@@ -546,7 +597,7 @@ def online_k_center(points, k):
 # Generate random points
 np.random.seed(42)
 all_points = np.random.rand(200, 2) * 100  # 100 points in a 100x100 grid
-data_points = random.sample(list(all_points), 100)
+data_points = random.sample(list(all_points), 10)
 #plot_points(data_points)
 
 '''
@@ -570,16 +621,16 @@ y_coordinates_4 = np.random.uniform(0, 50, 50)
 '''
 
 # Number of centers
-k = 4
+k = 3
 
 # Solve the offline k-center problem
-centers = offline_k_center(data_points, k)
+approx_centers = offline_k_center(data_points, k)
+#print("approx centers:", approx_centers)
 
 # Calculate the maximum distance to the nearest center
 # This value used as input parameter in the online problem
-max_dist = max_distance_to_centers(data_points, centers)
-
-#diam_offline = calculate_diameter(data_points)
+max_dist = lp_relaxation_k_center(data_points, k)
+max_dist_approx = max_distance_to_centers(data_points, approx_centers)
 
 '''
 print("fractional lp solution:")
@@ -589,11 +640,11 @@ offline_k_center_lp(data_list, k)
 '''
 
 # Plot the points and the selected centers
-#plot_points_and_centers(data_points, centers)
+#plot_points_and_centers(data_points, approx_centers)
 
-#print("Selected Centers:", centers)
 print("\n")
-print("Offline maximum distance to nearest center:", max_dist)
+print("Approx maximum distance to nearest center:", max_dist_approx)
+print("Max distance from lp relaxation:", max_dist)
 
 # begin online algorithm
 fractional_sol, recourse, centers, OPT_rec = online_k_center(data_points, k) 
@@ -612,13 +663,17 @@ center_coordinates = random.sample(list(all_points), len(centers))
 max_online_dist = max_distance_to_centers(data_points, center_coordinates)
 
 
-for i in range(len(centers)):
-    center_coordinates[i] = data_points[centers[i]]
+# (optional) for plotting
+#for i in range(len(centers)):
+    #center_coordinates[i] = data_points[centers[i]]
 #plot_points_and_centers(data_points, center_coordinates)
 
 print("max online distance:", max_online_dist)
 
 print("alpha * beta * offline max distance:", alpha * beta * max_dist)
+
+# Plot the points and the selected centers
+#plot_points_and_centers(data_points, approx_centers)
 
 
 

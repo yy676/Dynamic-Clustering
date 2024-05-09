@@ -1,7 +1,5 @@
 import numpy as np
-import scipy.optimize
 import matplotlib.pyplot as plt
-from scipy.optimize import minimize, Bounds
 import copy
 import random
 import pulp
@@ -22,6 +20,7 @@ def calculate_diameter(points):
 
 ############################### offline algorithm to produce offline OPT distance #################################
 
+# greedy approximation to compute OPT_distance
 def offline_k_center(points, k):
     # Initialize the first center randomly
     centers = [points[np.random.randint(len(points))]]
@@ -33,6 +32,7 @@ def offline_k_center(points, k):
     
     return centers
 
+# LP relaxation for OPT_distance 
 def lp_relaxation_k_center(points, k):
     num_points = len(points)
     prob = pulp.LpProblem("k_Center", pulp.LpMinimize)
@@ -75,8 +75,6 @@ def lp_relaxation_k_center(points, k):
         print(f"y[{j}] = {y[j].varValue}")
     '''
 
-    #print("z value:", pulp.value(z))
-
     # print out the x and l matrices for debugging
     x_mat = np.zeros((num_points, num_points))
     for i in range(num_points):
@@ -92,52 +90,6 @@ def lp_relaxation_k_center(points, k):
     
     return result
 
-'''
-def can_place_centers(distances, k, max_distance):
-    #print("Entering feasibility check...")
-    num_points = len(distances)
-    prob = pulp.LpProblem("Feasibility_Check", pulp.LpMinimize)
-
-    # Binary Variables for whether point j is a center
-    y = pulp.LpVariable.dicts("y", range(num_points), lowBound=0, upBound=1, cat=pulp.LpBinary)
-    #x = pulp.LpVariable.dicts("x", (range(num_points), range(num_points)), lowBound=0, upBound=1, cat=pulp.LpBinary)
-
-    # Constraints
-    for i in range(num_points):
-        prob += pulp.lpSum(y[j] for j in range(num_points) if distances[i][j] <= max_distance) >= 1
-
-    prob += pulp.lpSum(y[j] for j in range(num_points)) == k
-
-    # This is a feasibility problem, no need for an objective
-    prob.solve(pulp.PULP_CBC_CMD(msg=False))
-    #print("Status:", pulp.LpStatus[prob.status])
-
-    
-    print("y[j] values:")
-    for j in range(num_points):
-        print(f"y[{j}] = {y[j].varValue}")
-
-    status = prob.status
-    #print("Solver status:", pulp.LpStatus[status])
-
-    result = status == pulp.LpStatusOptimal
-    #print("feasibility check result:", result)
-    
-    return result
-
-def binary_search_k_center(distances, k):
-    low, high = 0, np.max(distances)
-    best_z = high
-
-    while high - low > 1e-4:  # Precision can be adjusted
-        mid = (low + high) / 2
-        if can_place_centers(distances, k, mid):
-            best_z = mid
-            high = mid
-        else:
-            low = mid
-    return best_z
-'''
 
 def max_distance_to_centers(points, centers):
     max_dist = 0
@@ -183,27 +135,6 @@ epsilon = 0.25
 
 ####################################### functions needed for main method ############################################################
 
-'''
-# initialization for online_k_center
-def initialization(points):
-    x = np.zeros(len(points))
-
-    # start with a set of candidate points of randomly selected 10 points from input
-    #indices = np.random.choice(points.shape[0], size = 10, replace=False)
-    #candidates = points[indices, :]
-    
-    print("\n")
-    #print("candidate indices:", indices)
-    #print("center candidates:", candidates)
-
-    indices = []
-    candidates = []
-
-    # initialize constraint matrix
-    constraint_matrix = []
-
-    return x, indices, candidates, constraint_matrix
-
 # update the covering constraints to accommodate insertion and deletion of clients
 # (potentially needed)
 def update_constraints(C,s, n):
@@ -215,7 +146,6 @@ def update_constraints(C,s, n):
     
     return C
 
-'''
 # find all points within the radius of the current client
 # this step can be thought of as updating the covering constraint
 def find_candidates(candidate_indices, points, client, radius):
@@ -239,89 +169,6 @@ def check_covering_feasibility(s, x):
         return True
     else:
         return False
-
-'''
-# covering objective function for solving x's
-def covering_objective(x, x_old, s, epsilon):
-
-   # we only deal with the x_i's whose coefficient c_i is nonzero
-    prev_x_hat = np.zeros(len(s))
-
-    for i in range(len(prev_x_hat)):
-        prev_x_hat[i] = x_old[s[i]] + epsilon/(4 * len(s))
-    
-    x_adj = x + epsilon / (4 * len(s)) 
-    
-    with np.errstate(divide='ignore', invalid='ignore'):
-        ratio = x_adj / prev_x_hat
-        where_valid = prev_x_hat > 0
-        log_term = np.where(where_valid, np.log(np.maximum(ratio, 1e-10)), 0)
-
-    return np.sum(x_adj * log_term - x_adj)
-
-
-# packing objective function for solving x's
-def packing_objective(x, x_old):
-
-    objective = 0
-    for i in range(len(x)):
-        # additional checking to avoid invalid values
-        if x_old[i] != 0 and x[i] > 0:
-            ratio = x[i] / x_old[i]
-            if ratio > 0:
-                objective += x[i] * np.log(ratio) - x[i]
-    
-    return objective
-
-# covering constraint for solving x's
-def covering_constraint(x):
-    return np.sum(x) - 1
-
-# packing constraint for solving x's
-def packing_constraint(x, epsilon, k):
-    return (1 + epsilon) * k - np.sum(x) 
-
-def positive_constraint(x):
-    return x 
-
-# optimize and update the values of x's when a covering constraint not satisfied
-def update_covering_variables(x, s, epsilon):
-   # start with x's at t-1
-    x0 = np.zeros(len(s))
-    for i in range(len(s)):
-        x0[i] = x[s[i]]
-
-    # set up constraint for scipy solver for x's
-    cons = {'type': 'ineq', 'fun':covering_constraint}
-
-    result = minimize(covering_objective, x0, args=(x, s, epsilon), constraints=cons, method='SLSQP')
-    
-    # finally, update the values in the original x vector
-    x_new = x
-    for i in range(len(s)):
-        x_new[s[i]] = result.x[i]
-
-    #print("updated fractional solutions:", x_new)
-
-    return x_new
-
-
-# optimize and update the values of x's when a packing constraint not satisfied
-def update_packing_variables(x, epsilon, k):
-    
-    cons = [{'type': 'ineq', 'fun':packing_constraint, 'args':(epsilon, k)},
-            {'type': 'ineq', 'fun':positive_constraint}]
-
-    x0 = x
-
-    bounds = Bounds(0, np.inf)
-
-    result = minimize(packing_objective, x0, args=(x), constraints=cons, method='SLSQP', bounds=bounds)
-
-    #print("updated fraction solutions after packing violation:", result.x)
-
-    return result.x
-'''
 
 
 # alternative method to update x's when a covering violation occurs
@@ -736,13 +583,6 @@ approx_centers = offline_k_center(data_points, k)
 max_dist = lp_relaxation_k_center(data_points, k)
 max_dist_approx = max_distance_to_centers(data_points, approx_centers)
 
-'''
-print("fractional lp solution:")
-data_list = np.array([list(p) for p in data_points])
-print("data list:", data_list)
-offline_k_center_lp(data_list, k)
-'''
-
 # Plot the points and the selected centers
 #plot_points_and_centers(data_points, approx_centers)
 
@@ -750,18 +590,7 @@ print("\n")
 print("Approx maximum distance to nearest center:", max_dist_approx)
 print("Max distance from lp relaxation:", max_dist)
 
-# find OPT_dist with binary search
-# first compute distance matrix
-num_points = len(data_points)
-dist_mat = np.zeros((num_points, num_points))
-for i in range(num_points):
-    for j in range(num_points):
-        dist_mat[i, j] = euclidean_distance(data_points[i], data_points[j])
-#print("distance matrix:\n", dist_mat)
-#optimal_z = binary_search_k_center(dist_mat, k)
-#print("Optimal maximum distance from binary search:", optimal_z)
-
-# begin online algorithm
+# begin calculation of the online problem
 fractional_sol, recourse, centers, OPT_rec = online_k_center(requests, data_points, k) 
 
 print("-----------final online results-----------")

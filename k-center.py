@@ -74,15 +74,70 @@ def lp_relaxation_k_center(points, k):
     for j in range(num_points):
         print(f"y[{j}] = {y[j].varValue}")
     '''
+
+    #print("z value:", pulp.value(z))
+
     # print out the x and l matrices for debugging
     x_mat = np.zeros((num_points, num_points))
     for i in range(num_points):
         for j in range(num_points):
             x_mat [i, j] = x[i][j].varValue
     #print("x_mat:\n", x_mat)
-    
-    return pulp.value(z)
 
+    z = np.zeros(num_points)
+    for i in range(num_points):
+        for j in range(num_points):
+            z[i] += x_mat[i][j] * dist_mat[i][j]
+    result = np.max(z)
+    
+    return result
+
+'''
+def can_place_centers(distances, k, max_distance):
+    #print("Entering feasibility check...")
+    num_points = len(distances)
+    prob = pulp.LpProblem("Feasibility_Check", pulp.LpMinimize)
+
+    # Binary Variables for whether point j is a center
+    y = pulp.LpVariable.dicts("y", range(num_points), lowBound=0, upBound=1, cat=pulp.LpBinary)
+    #x = pulp.LpVariable.dicts("x", (range(num_points), range(num_points)), lowBound=0, upBound=1, cat=pulp.LpBinary)
+
+    # Constraints
+    for i in range(num_points):
+        prob += pulp.lpSum(y[j] for j in range(num_points) if distances[i][j] <= max_distance) >= 1
+
+    prob += pulp.lpSum(y[j] for j in range(num_points)) == k
+
+    # This is a feasibility problem, no need for an objective
+    prob.solve(pulp.PULP_CBC_CMD(msg=False))
+    #print("Status:", pulp.LpStatus[prob.status])
+
+    
+    print("y[j] values:")
+    for j in range(num_points):
+        print(f"y[{j}] = {y[j].varValue}")
+
+    status = prob.status
+    #print("Solver status:", pulp.LpStatus[status])
+
+    result = status == pulp.LpStatusOptimal
+    #print("feasibility check result:", result)
+    
+    return result
+
+def binary_search_k_center(distances, k):
+    low, high = 0, np.max(distances)
+    best_z = high
+
+    while high - low > 1e-4:  # Precision can be adjusted
+        mid = (low + high) / 2
+        if can_place_centers(distances, k, mid):
+            best_z = mid
+            high = mid
+        else:
+            low = mid
+    return best_z
+'''
 
 def max_distance_to_centers(points, centers):
     max_dist = 0
@@ -122,7 +177,7 @@ def plot_points(points):
 ####################################### online positive-body chasing for k-center ##################################################
 
 # setting parameters needed for online algorithm
-beta = 2
+beta = 1.5
 
 epsilon = 0.25
 
@@ -341,10 +396,8 @@ def compute_OPT_rec(C, P, covering_t, packing_t, t, k, epsilon):
     lp_prob.solve(pulp.PULP_CBC_CMD(msg=False))
 
     # Output results
-    #print("Status:", pulp.LpStatus[lp_prob.status])
-
     '''
-    # print out the x and l matrices for debugging
+    # printing x and l matrices for debugging
     x_mat = np.zeros((T, n))
     l_mat = np.zeros((T, n))
 
@@ -358,6 +411,7 @@ def compute_OPT_rec(C, P, covering_t, packing_t, t, k, epsilon):
 
     #print("Total OPT_recourse = ", pulp.value(lp_prob.objective))
     '''
+
     return pulp.value(lp_prob.objective)
 
 
@@ -597,8 +651,9 @@ def online_k_center(points, k):
 # Generate random points
 np.random.seed(42)
 all_points = np.random.rand(200, 2) * 100  # 100 points in a 100x100 grid
-data_points = random.sample(list(all_points), 10)
+data_points = random.sample(list(all_points), 100)
 #plot_points(data_points)
+#print(data_points)
 
 '''
 #feed input points as clusters for alternative testing
@@ -621,7 +676,7 @@ y_coordinates_4 = np.random.uniform(0, 50, 50)
 '''
 
 # Number of centers
-k = 3
+k = 4
 
 # Solve the offline k-center problem
 approx_centers = offline_k_center(data_points, k)
@@ -645,6 +700,17 @@ offline_k_center_lp(data_list, k)
 print("\n")
 print("Approx maximum distance to nearest center:", max_dist_approx)
 print("Max distance from lp relaxation:", max_dist)
+
+# find OPT_dist with binary search
+# first compute distance matrix
+num_points = len(data_points)
+dist_mat = np.zeros((num_points, num_points))
+for i in range(num_points):
+    for j in range(num_points):
+        dist_mat[i, j] = euclidean_distance(data_points[i], data_points[j])
+#print("distance matrix:\n", dist_mat)
+#optimal_z = binary_search_k_center(dist_mat, k)
+#print("Optimal maximum distance from binary search:", optimal_z)
 
 # begin online algorithm
 fractional_sol, recourse, centers, OPT_rec = online_k_center(data_points, k) 

@@ -43,7 +43,7 @@ def lp_relaxation_k_center(points, k):
         for j in range(num_points):
             dist_mat[i, j] = euclidean_distance(points[i], points[j])
     
-    #print("distance matrix:\n", dist_mat)
+    print("distance matrix:\n", dist_mat)
 
     # Variables
     x = pulp.LpVariable.dicts("x", (range(num_points), range(num_points)), lowBound=0, upBound=1, cat=pulp.LpContinuous)
@@ -80,12 +80,13 @@ def lp_relaxation_k_center(points, k):
     for i in range(num_points):
         for j in range(num_points):
             x_mat [i, j] = x[i][j].varValue
-    #print("x_mat:\n", x_mat)
+    print("x_mat:\n", x_mat)
 
     z = np.zeros(num_points)
     for i in range(num_points):
         for j in range(num_points):
             z[i] += x_mat[i][j] * dist_mat[i][j]
+    
     result = np.max(z)
     
     return result
@@ -274,9 +275,9 @@ def compute_OPT_rec(C_list, P_list, covering_t, packing_t, t, k, epsilon, client
     
     print("Result from offline OPT_rec offline:")
     print("X: \n", x_mat)
-    print("l: \n", l_mat)
+    #print("l: \n", l_mat)
 
-    print("OPT_recourse this iteration = ", pulp.value(lp_prob.objective))
+    #print("OPT_recourse this iteration = ", pulp.value(lp_prob.objective))
     
     return pulp.value(lp_prob.objective)
 
@@ -418,7 +419,6 @@ def online_k_center(requests, points, k):
         # stores all covering constraints at t
         C_t =[]
         s = find_candidates(client_indices, points, current_client_coordinates, min(beta * current_OPT_dist, diam))
-        #C_t.append(s)
         # update the covering constraint matrix
         #constraint_mat = update_constraints(constraint_mat, s, len(points))
 
@@ -430,7 +430,7 @@ def online_k_center(requests, points, k):
             # add the set s to C_list for computing OPT_rec
             # record t in violated_covering_t
             #print("Solving covering constraints...")
-            violated_covering_t.append(t)
+            #violated_covering_t.append(t)
             x_new = update_covering(x, s, epsilon)
             print("updated solution from closed-form (covering):", x_new)
         #else:
@@ -455,7 +455,7 @@ def online_k_center(requests, points, k):
         active_set = copy.deepcopy(client_indices)
         #packing_min = min((1 + epsilon) * k, len(active_set))
         P_list.append(active_set)
-        print("list of packing constraints so far:", P_list)
+        #print("list of packing constraints so far:", P_list)
 
         # recheck again the covering constraint's for all points
         print("\nrecheck for covering violations...")
@@ -567,7 +567,7 @@ def online_k_center(requests, points, k):
             covered_points = set(item for sublist in list_of_B_i_hat for item in sublist)
         
         #print("all clients covered!")
-        #print("selected centers for this round:", set_of_centers)
+        print("selected centers for this round:", set_of_centers)
 
         t += 1
 

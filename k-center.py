@@ -148,10 +148,11 @@ def update_constraints(C,s, n):
 
 # find all points within the radius of the current client
 # this step can be thought of as updating the covering constraint
-def find_candidates(candidate_indices, points, client, radius):
+def find_candidates(client_indices, points, client, radius):
     s = []
-    print("candidate set:", candidate_indices)
-    for index in candidate_indices:
+    #print("candidate set:", client_indices)
+    #print("points:", points)
+    for index in client_indices:
         #print("index in candidate_indicies:", index)
         if euclidean_distance(points[int(index)], client) <= radius:
             s.append(int(index))
@@ -183,7 +184,6 @@ def update_covering(x, s, epsilon):
 
     return x
 
-
 # alternative method to update x's when a packing violation occurs
 # similarly, we also use the closed form here
 def update_packing(x, epsilon, k):
@@ -210,43 +210,58 @@ def update_packing(x, epsilon, k):
 #   covering_t, packing_t: sets that store the t's when violations happen
 #   T: the number of steps so far
 
-def compute_OPT_rec(C, P, covering_t, packing_t, t, k, epsilon):
+def compute_OPT_rec(C_list, P_list, covering_t, packing_t, t, k, epsilon, client_indices):
 
     # Problem data and parameters
     T = t + 1  # Number of time periods
-    n = t + 1  # Number of variables per period (might be different from T in dynamic streaming)
-    #weights = {t: [1]*n for t in range(0, T)}  # Example weights
-
+    n = t + 1  # Number of total variables (including removed clients)
     # Create the LP problem object
     lp_prob = pulp.LpProblem("OPT_recourse", pulp.LpMinimize)
 
     # Decision variables x_i^t and l_i^t
-    x = pulp.LpVariable.dicts("x", (range(T), range(n)), lowBound=0)
-    l = pulp.LpVariable.dicts("l", (range(T), range(n)), lowBound=0)
+    x = pulp.LpVariable.dicts("x", (range(T), range(n)), lowBound=0, upBound=1, cat=pulp.LpContinuous)
+    l = pulp.LpVariable.dicts("l", (range(T), range(n)), lowBound=0, cat=pulp.LpContinuous)
+    #z = pulp.LpVariable("z", lowBound=0)
 
     # Objective function
     lp_prob += pulp.lpSum(l[t][i] for i in range(n) for t in range(T))
 
     # Constraints
-    for t in covering_t:
-        subset_indices = C[t]
-        #print("violating covering constraint(subset of indices):", subset_indices)
-        lp_prob += pulp.lpSum(x[t][i] for i in subset_indices) >= 1, f"CoverageConstraint_{t}"
-    for t in packing_t:
-        lp_prob += pulp.lpSum(x[t][i] for i in P[t]) <= (1 + epsilon) * k, f"PerformanceConstraint_{t}"
+    for t in range(len(C_list)):
+        C_t = C_list[t]
+        print("all covering constraints at this iteration:", C_t)
+        for c in range(len(C_t)):
+            subset_indices = C_t[c]
+            #print("violating covering constraint(subset of indices):", subset_indices)
+            lp_prob += pulp.lpSum(x[t][i] for i in subset_indices) >= 1  
+    for t in range(len(P_list)):
+        P = P_list[t]
+        #print("Packing constraints this iteration", P)
+        #print("number of active points this iteration:", len(P))
+    
+        #print("value of packing_min this iteration:", packing_min)
+        #lp_prob += z <= (1 + epsilon) * k
+        #lp_prob += z <= len(P)
+        lp_prob += pulp.lpSum(x[t][i] for i in P) <= (1 + epsilon) * k  
+        # make sure that removed points are set to 0
+        for i in range(len(client_indices)):
+            if i not in P:
+                lp_prob += x[t][i] == 0
+    
     for i in range(n):
         # include the recourse at t = 0
         lp_prob += x[0][i] <= l[0][i]
     for t in range(1, T):
         for i in range(n):
-            lp_prob += (x[t][i] - x[t-1][i]) <= l[t][i], f"ChangeConstraint_Pos_{t}_{i}"
-            lp_prob += (x[t-1][i] - x[t][i]) <= l[t][i], f"ChangeConstraint_Neg_{t}_{i}"
+            lp_prob += (x[t][i] - x[t-1][i]) <= l[t][i] #, f"ChangeConstraint_Pos_{t}_{i}"
+            lp_prob += (x[t-1][i] - x[t][i]) <= l[t][i] #, f"ChangeConstraint_Neg_{t}_{i}"
 
     # Solve the problem
     lp_prob.solve(pulp.PULP_CBC_CMD(msg=False))
 
     # Output results
-    '''
+    #print("The packing target:", pulp.value(z))
+    
     # printing x and l matrices for debugging
     x_mat = np.zeros((T, n))
     l_mat = np.zeros((T, n))
@@ -255,13 +270,14 @@ def compute_OPT_rec(C, P, covering_t, packing_t, t, k, epsilon):
         for j in range(n):
             x_mat [i, j] = x[i][j].varValue
             l_mat[i, j] = l[i][j].varValue
+            
     
-    #print("X: \n", x_mat)
-    #print("l: \n", l_mat)
+    print("Result from offline OPT_rec offline:")
+    print("X: \n", x_mat)
+    print("l: \n", l_mat)
 
-    #print("Total OPT_recourse = ", pulp.value(lp_prob.objective))
-    '''
-
+    print("OPT_recourse this iteration = ", pulp.value(lp_prob.objective))
+    
     return pulp.value(lp_prob.objective)
 
 
@@ -362,22 +378,23 @@ def online_k_center(requests, points, k):
                 if client_to_remove in client_indices:
                     client_indices.remove(client_to_remove)
                 
-                item_to_remove = points[client_to_remove]
-                for i in range(len(client_points)):
-                    if np.array_equal(client_points[i], item_to_remove):
-                        client_points.pop(i)
-                        break
+                    item_to_remove = points[client_to_remove]
+                    for i in range(len(client_points)):
+                        if np.array_equal(client_points[i], item_to_remove):
+                            client_points.pop(i)
+                            break
 
-                for client in clients:
-                    if client[0] == client_to_remove:
-                        clients.remove(client)
-                print("removal request")
-                print("client removed:", client_to_remove)
+                    for client in clients:
+                        if client[0] == client_to_remove:
+                            clients.remove(client)
+                    print("removal request")
+                    print("client removed:", client_to_remove)
             continue
         
         # the request is an insertion, add the new client and deal with any constraint violations
         # set of active clients
         current_client = (t, points[t])
+        current_client_coordinates = points[t]
         clients.append(current_client)
         client_points.append(points[t])
         print(client_points)
@@ -398,7 +415,10 @@ def online_k_center(requests, points, k):
         #print("diam(t):", diam)
         print("curront_OPT_dist:", current_OPT_dist)
 
-        s = find_candidates(client_indices, points, points[t], min(beta * current_OPT_dist, diam))
+        # stores all covering constraints at t
+        C_t =[]
+        s = find_candidates(client_indices, points, current_client_coordinates, min(beta * current_OPT_dist, diam))
+        #C_t.append(s)
         # update the covering constraint matrix
         #constraint_mat = update_constraints(constraint_mat, s, len(points))
 
@@ -410,27 +430,53 @@ def online_k_center(requests, points, k):
             # add the set s to C_list for computing OPT_rec
             # record t in violated_covering_t
             #print("Solving covering constraints...")
-            C_list.append(s)
             violated_covering_t.append(t)
             x_new = update_covering(x, s, epsilon)
-            #print("updated solution from closed-form (covering):", x_new)
-        else:
+            print("updated solution from closed-form (covering):", x_new)
+        #else:
             # no covering constraints are violated, add empty list at row t 
-            C_list.append([])
+            #C_list.append([])
 
         # check if packing constraint is violated
         # if so, update the values of x's
         if (np.sum(x) > (1+epsilon) * k):
             #print("Solving packing constraints")
             # the packing constraint takes the sum over all active clients
-            P_list.append(client_indices)
+            #P_list.append(client_indices)
             violated_packing_t.append(t)
             x_new = update_packing(x, epsilon, k)
-            #print("updated solution from closed-form (packing):", x_new)
-        else:
-            P_list.append([])
+            print("updated solution from closed-form (packing):", x_new)
+        #else:
+            #P_list.append([])
+
+        # record the packing constraint for this iteration
+        print("active clients this round (packing constraint):", client_indices)
+        active_set = []
+        active_set = copy.deepcopy(client_indices)
+        #packing_min = min((1 + epsilon) * k, len(active_set))
+        P_list.append(active_set)
+        print("list of packing constraints so far:", P_list)
+
+        # recheck again the covering constraint's for all points
+        print("\nrecheck for covering violations...")
+
+        print("current client set:", client_indices)
+        for client_index in client_indices:
+            print("for client:", client_index)
+            s_set = find_candidates(client_indices, points, points[client_index], min(beta * current_OPT_dist, diam))
+            C_t.append(s_set)
+
+            if (check_covering_feasibility(s_set, x_new) == False):
+                print("re-adjusting for covering constraints...")
+                x_new = update_covering(x_new, s_set, epsilon)
+                print("re-updated solution after resolving covering constraint:", x_new)
         
-        OPT_recourse = compute_OPT_rec(C_list, P_list, violated_covering_t, violated_packing_t, t, k, epsilon)
+        # record all covering constraints for this round
+        C_list.append(C_t)
+        #print("all covering constraints at this iteration:", C_t)
+        
+        print("\nComputing OPT recourse...")
+        OPT_recourse = compute_OPT_rec(C_list, P_list, violated_covering_t, violated_packing_t, t, k, epsilon, client_indices)
 
         # update total recourse in l1-norm
         #print("online recourse in this round:", np.sum(np.abs(x_new - x_old)))
@@ -440,6 +486,7 @@ def online_k_center(requests, points, k):
         x = x_new
 
         #print("fractional solution this round:", x)
+        print("number of k this round:", np.sum(x_new))    
         
         #################################### rounding procedure begins from here ####################################
         # integrate rounding at each round
@@ -535,7 +582,7 @@ def online_k_center(requests, points, k):
 # Generate random points
 np.random.seed(42)
 all_points = np.random.rand(200, 2) * 100  # 100 points in a 100x100 grid
-data_points = random.sample(list(all_points), 20)
+data_points = random.sample(list(all_points), 10)
 #plot_points(data_points)
 #print(data_points)
 

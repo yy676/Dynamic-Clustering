@@ -5,7 +5,15 @@ import random
 import pulp
 from sklearn.datasets import make_blobs
 
+############################################# set up parameters ###################################################
+beta = 1.25
+epsilon = 0.25
 
+k = 4
+alpha = 3 + 2 * np.sqrt(2)
+delta = np.sqrt(2)
+
+################################################ useful methods ###################################################
 def euclidean_distance(x, y):
     return np.sqrt(np.sum((x - y)**2))
 
@@ -121,6 +129,7 @@ def plot_points_and_centers(points, centers):
     plt.grid(True)
     plt.show()
 
+'''
 def plot_points(points):
     plt.figure(figsize=(8, 6))
     x, y = zip(*points)
@@ -134,13 +143,20 @@ def plot_points(points):
     plt.legend()
     plt.grid(True)
     plt.show()
+'''
 
 ####################################### online positive-body chasing for k-center ##################################################
 
 # setting parameters needed for online algorithm
+'''
+k = 4
 beta = 1
 
 epsilon = 0.25
+
+alpha = 1 + 2 * np.sqrt(2)
+delta = np.sqrt(2)
+'''
 
 ####################################### functions needed for main method ############################################################
 
@@ -291,8 +307,8 @@ def compute_OPT_rec(C_list, P_list, t, k, epsilon, client_indices):
 ######################################### helper for rounding ###########################################
 
 # set the parameters for rounding
-alpha = 1 + 2 * np.sqrt(2)
-delta = np.sqrt(2)
+#alpha = 1 + 2 * np.sqrt(2)
+#delta = np.sqrt(2)
 
 # subroutine to find the balls B_i and B_hait_i for a given center_index
 # this subroutine is called whenever the set S is updated
@@ -603,12 +619,12 @@ n_features = 2           # Number of dimensions (2D)
 centers = 4              # Number of clusters
 cluster_std = 1.0        # Standard deviation of clusters
 cluster_points, y = make_blobs(n_samples=n_samples, n_features=n_features, centers=centers, cluster_std=cluster_std, random_state=42)
-print(y)
+#print(y)
 
 # set this variable to either random_points or cluster_points
 data_points = cluster_points
 
-
+############################################## set up dynamic streaming ###############################################
 # Preliminary simulation of dynamic streaming:
 # We'll add 20% of the amout of data to be removal requests
 # to simulate dynamic streaming.
@@ -616,35 +632,29 @@ data_points = cluster_points
 # we randomly sample an active client point that is not in the set of centers
 # In our request array. a +1 indicates an insertion of a client;
 # -1 indicates a removal.
-requests = np.ones(int(len(data_points) * 1.2))
-removals = np.random.choice(range(0, len(data_points)+ 1), int(len(data_points)*0.2), replace=False)
-#print(removals)
-requests[removals] = -1
-#print(requests)
+requests = np.ones(int(len(data_points)))
+#removals = np.random.choice(range(0, len(data_points)+ 1), int(len(data_points)*0.2), replace=False)
+#requests[removals] = -1
+print(requests)
 
-
-# Number of centers
-k = 4
-
+############################################ solve the offline problem #################################################
 # Solve the offline k-center problem
+# (optional) greedy approximation of k-center for 
 approx_centers = offline_k_center(data_points, k)
-#print("approx centers:", approx_centers)
-
-# Calculate the maximum distance to the nearest center
-# This value used as input parameter in the online problem
-max_dist = lp_relaxation_k_center(data_points, k)
 max_dist_approx = max_distance_to_centers(data_points, approx_centers)
 
-# Plot the points and the selected centers
-#plot_points_and_centers(data_points, approx_centers)
+# Offline LP relaxation to get OPT_dist
+# This value is used as OPT(t) in the online algorithm for each t
+max_dist = lp_relaxation_k_center(data_points, k)
 
 print("\n")
-#print("Approx maximum distance to nearest center:", max_dist_approx)
 print("OPT distance from lp relaxation:", max_dist)
 
-# begin calculation of the online problem
+########################################### run online algorithm including rouding ######################################
+
 fractional_sol, recourse, centers, OPT_rec, total_int_recourse = online_k_center(requests, data_points, k) 
 
+# Output final results
 print("-----------final online results-----------")
 print("k = ", k)
 print("beta = ", beta)

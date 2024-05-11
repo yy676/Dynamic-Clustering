@@ -588,12 +588,11 @@ def online_k_center(requests, points, k):
 ################################################### main ############################################################
 ##################################################################################################################### 
 
-############################################ Step 1: parse inputs ###################################################
+################################################## parse inputs #####################################################
 
 # Method 1: Generate random points
 np.random.seed(42)
-all_points = np.random.rand(200, 2) * 100  # 100 points in a 100x100 grid
-#data_points = random.sample(list(all_points), 100)
+random_points = np.random.rand(100, 2) * 100  # 100 points in a 100x100 grid
 #plot_points(data_points)
 #print(data_points)
 
@@ -603,11 +602,12 @@ n_samples = 100          # Total number of points
 n_features = 2           # Number of dimensions (2D)
 centers = 4              # Number of clusters
 cluster_std = 1.0        # Standard deviation of clusters
-
-X, y = make_blobs(n_samples=n_samples, n_features=n_features, centers=centers, cluster_std=cluster_std, random_state=42)
+cluster_points, y = make_blobs(n_samples=n_samples, n_features=n_features, centers=centers, cluster_std=cluster_std, random_state=42)
 print(y)
 
-data_points = X
+# set this variable to either random_points or cluster_points
+data_points = cluster_points
+
 
 # Preliminary simulation of dynamic streaming:
 # We'll add 20% of the amout of data to be removal requests
@@ -655,9 +655,9 @@ print("number of centers (sum of fractional x's):", np.sum(fractional_sol))
 print("OPT recourse:", OPT_rec)
 print("total fractional online recourse:", recourse)
 print("final selected centers:", centers)
-print("total integer recourse:", total_int_recourse)
+print("total rounding recourse:", total_int_recourse)
 
-center_coordinates = random.sample(list(all_points), len(centers))
+center_coordinates = random.sample(list(data_points), len(centers))
 for i in range(len(centers)):
     center_coordinates[i] = data_points[centers[i]]
 max_online_dist = max_distance_to_centers(data_points, center_coordinates)
@@ -666,10 +666,9 @@ print("max online distance:", max_online_dist)
 
 print("alpha * beta * offline max distance:", alpha * beta * max_dist)
 
+# Plot the points and the selected centers
 plot_points_and_centers(data_points, center_coordinates)
 
-# Plot the points and the selected centers
-#plot_points_and_centers(data_points, approx_centers)
 
 
 

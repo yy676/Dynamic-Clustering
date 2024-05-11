@@ -213,9 +213,8 @@ def update_packing(x, epsilon, k):
 #      C(t) is the indices of non-zero c_i's that appear in a covering constraint at time t: 
 #      i.e., C(t) * x < 1; 
 #   P: a list of packing contraints at each t defined similarly to C
-#   T: the number of steps so far
-
-def compute_OPT_rec(C_list, P_list, covering_t, packing_t, t, k, epsilon, client_indices):
+#   t: index of current iteration (starts from 0)
+def compute_OPT_rec(C_list, P_list, t, k, epsilon, client_indices):
 
     # Problem data and parameters
     T = t + 1  # Number of time periods
@@ -234,7 +233,7 @@ def compute_OPT_rec(C_list, P_list, covering_t, packing_t, t, k, epsilon, client
     # Constraints
     for t in range(len(C_list)):
         C_t = C_list[t]
-        print("all covering constraints at this iteration:", C_t)
+        #print("all covering constraints at this iteration:", C_t)
         for c in range(len(C_t)):
             subset_indices = C_t[c]
             #print("violating covering constraint(subset of indices):", subset_indices)
@@ -277,12 +276,13 @@ def compute_OPT_rec(C_list, P_list, covering_t, packing_t, t, k, epsilon, client
             l_mat[i, j] = l[i][j].varValue
             
     
-    print("Result from offline OPT_rec:")
-    print("X_OPT: \n", x_mat)
+    #print("Result from offline OPT_rec:")
+    #print("X_OPT: \n", x_mat)
     #print("l: \n", l_mat)
 
     #print("OPT_recourse this iteration = ", pulp.value(lp_prob.objective))
     
+    # return the last row of the x matrix as the fractional solution for rounding
     return pulp.value(lp_prob.objective), x_mat[-1]
 
 
@@ -340,22 +340,19 @@ def online_k_center(requests, points, k):
     set_of_centers = []
     radius_of_centers = np.zeros(len(x))
 
+    # (optional) may needed for dynamic streaming
     # stores the number of total requests
     # will be modified when removal requests are added
     num_requests = len(points)
 
     # initialize variables needed for computing OPT_rec:
     # a t-by-n list of lists C, whose number of rows grows as t increases,
-    # at each time t, if a covering constraint is violated,
-    # append to C the vector c(t) such that the constraint c(t) * x(t) < 1,
-    # otherwise, append an empty list
+    # each row stores the covering constraints of time t
     # A matrix P for packing constraints is defined similarly
-    # auxiliary sets violated_covering_t, violated_packing_t that store the values of t when a 
-    # covering/packing constraint is violated at t
     C_list = []
     P_list = []
-    violated_covering_t = []
-    violated_packing_t = []
+    #violated_covering_t = []
+    #violated_packing_t = []
 
     #x_closed = np.zeros(len(x))
 
@@ -450,14 +447,14 @@ def online_k_center(requests, points, k):
             #print("Solving packing constraints")
             # the packing constraint takes the sum over all active clients
             #P_list.append(client_indices)
-            violated_packing_t.append(t)
+            #violated_packing_t.append(t)
             x_new = update_packing(x, epsilon, k)
             #print("updated solution from closed-form (packing):", x_new)
         #else:
             #P_list.append([])
 
         # record the packing constraint for this iteration
-        print("active clients this round (packing constraint):", client_indices)
+        #print("active clients this round (packing constraint):", client_indices)
         active_set = []
         active_set = copy.deepcopy(client_indices)
         #packing_min = min((1 + epsilon) * k, len(active_set))
@@ -483,11 +480,9 @@ def online_k_center(requests, points, k):
         #print("all covering constraints at this iteration:", C_t)
         
         print("\nComputing OPT recourse...")
-        OPT_recourse, x_OPT = compute_OPT_rec(C_list, P_list, violated_covering_t, violated_packing_t, t, k, epsilon, client_indices)
+        OPT_recourse, x_OPT = compute_OPT_rec(C_list, P_list, t, k, epsilon, client_indices)
 
         # update total recourse in l1-norm
-        #print("online recourse in this round:", np.sum(np.abs(x_new - x_old)))
-
         total_recourse += np.sum(np.abs(x_new - x_old))
         #print("total online recourse so far:", total_recourse)
         x = x_new
@@ -497,18 +492,11 @@ def online_k_center(requests, points, k):
         
         #################################### rounding procedure begins from here ####################################
         # integrate rounding at each round
-        # maintain a set S of open centers at each t
-        # calculate for each i in S it's radius = min(beta * OPT(t_i), diag)
-        # OPT(t_i) is calculated using the offline algorithm
-
-        # calculate OPT_offline for current active clients
-        #centers_offline = offline_k_center(client_points, k)
-        #current_OPT_dist = max_distance_to_centers(client_points, centers_offline)
-        # diam = calculate_diameter(client_points)
+        # maintain a set S (initially empty) of open centers at each t
+        # r_i of each 'center' is stored at radius_of_centers[center]
         
         # identify the balls/set of points that are B_i and B_i_hat for each i in set_of_centers
         # while building the balls B_i, drop any i from set_of_centers if it has mass less than 1-epsilon
-        #list_of_B_i = []
 
         print("\n")
         print("Rounding begins")
@@ -519,7 +507,7 @@ def online_k_center(requests, points, k):
         S = copy.deepcopy(set_of_centers)
         for center in S:
 
-            if center not in client_indices:
+            if center not in client_indices: # this means 'center' was a removed point at some t
                 set_of_centers.remove(center)
                 total_integer_recourse += 1
                 print("updated set of centers:", set_of_centers)
@@ -535,7 +523,7 @@ def online_k_center(requests, points, k):
             # drop any B_i whose mass is too small
             mass = 0
             for index_of_point in B_i:
-                mass += x_OPT[index_of_point]
+                mass += x_OPT[index_of_point]  # currently using the solution returned by OPT_rec for rounding
             
             print("mass for cent", mass)
 
@@ -557,7 +545,7 @@ def online_k_center(requests, points, k):
 
             j = next(iter(uncovered))
             set_of_centers.append(j)
-            set_of_centers = list(set(set_of_centers))
+            set_of_centers = list(set(set_of_centers)) # get rid of duplicates in the list
             total_integer_recourse += 1
             # record current_radius
             current_r = min(beta * current_OPT_dist, diam)
@@ -576,7 +564,7 @@ def online_k_center(requests, points, k):
                     total_integer_recourse += 1
                     print("center {center_index} dropped", center_index)
 
-            # update the the set of B_i_hat
+            # update the the set of B_i_hats
             list_of_B_i_hat = []
             for center in set_of_centers:
                 B_i, B_i_hat = find_balls(points, client_indices, center, radius_of_centers[center], alpha * min(beta * current_OPT_dist, diam))

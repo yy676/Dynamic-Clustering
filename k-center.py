@@ -43,6 +43,7 @@ def lp_relaxation_k_center(points, k):
     for i in range(num_points):
         for j in range(num_points):
             dist_mat[i, j] = euclidean_distance(points[i], points[j])
+        print(max(dist_mat[i]))
     
     #print("distance matrix:\n", dist_mat)
 
@@ -290,7 +291,7 @@ def compute_OPT_rec(C_list, P_list, t, k, epsilon, client_indices):
 ######################################### helper for rounding ###########################################
 
 # set the parameters for rounding
-alpha = 2 * np.sqrt(2)
+alpha = 3
 delta = np.sqrt(2)
 
 # subroutine to find the balls B_i and B_hait_i for a given center_index
@@ -418,7 +419,7 @@ def online_k_center(requests, points, k):
         current_OPT_dist = lp_relaxation_k_center(client_points, k)
 
         #print("diam(t):", diam)
-        #print("curront_OPT_dist:", current_OPT_dist)
+        print("curront_OPT_dist:", current_OPT_dist)
         #print("approx OPT dist:", approx_dist)
 
         # stores all covering constraints at t
@@ -526,12 +527,12 @@ def online_k_center(requests, points, k):
             for index_of_point in B_i:
                 mass += x_OPT[index_of_point]  # currently using the solution returned by OPT_rec for rounding
             
-            #print("mass for cent", mass)
+            print("mass for center", mass)
 
             if mass < 1 - epsilon:
                 set_of_centers.remove(center)
                 total_integer_recourse += 1
-                #print("center dropped from set:", center)
+                print("center dropped from set:", center)
             else:
                 list_of_B_i_hat.append(B_i_hat)
         
@@ -542,7 +543,7 @@ def online_k_center(requests, points, k):
         while len(covered_points) < len(client_indices):
         # find the clients that are not covered by the current set of centers
             uncovered = set(client_indices) - covered_points
-            #print("uncovered clients:", uncovered)
+            print("uncovered clients:", uncovered)
 
             j = next(iter(uncovered))
             set_of_centers.append(j)
@@ -552,18 +553,18 @@ def online_k_center(requests, points, k):
             current_r = min(beta * current_OPT_dist, diam)
             radius_of_centers[j] = current_r
 
-            #print("new center added to set:", j)
-            #print("With radius_i:", current_r)
+            print("new center added to set:", j)
+            print("With radius_i:", current_r)
 
-            for center_index in set_of_centers:
-                
+            S = copy.deepcopy(set_of_centers)
+            for center_index in S:
                 ball_dist = radius_of_centers[j] + radius_of_centers[center_index] + delta * min(radius_of_centers[j], radius_of_centers[center_index])
-                #print("distance between two centers:", euclidean_distance(points[center_index], points[j]))
-                #print("ball disjoint-radius:", ball_dist)
+                print("distance between two centers:", euclidean_distance(points[center_index], points[j]))
+                print("ball disjoint-radius:", ball_dist)
                 if center_index != j and euclidean_distance(points[center_index], points[j]) <= ball_dist:
                     set_of_centers.remove(center_index)
                     total_integer_recourse += 1
-                    #print("center {center_index} dropped", center_index)
+                    print("center {center_index} dropped", center_index)
 
             # update the the set of B_i_hats
             list_of_B_i_hat = []
@@ -572,7 +573,7 @@ def online_k_center(requests, points, k):
                 list_of_B_i_hat.append(B_i_hat)
             covered_points = set(item for sublist in list_of_B_i_hat for item in sublist)
         
-        #print("all clients covered!")
+        print("all clients covered!")
         #print("selected centers for this round:", set_of_centers)
         #print("total integer recourse so far:", total_integer_recourse)
 
@@ -589,7 +590,7 @@ def online_k_center(requests, points, k):
 # Generate random points
 np.random.seed(42)
 all_points = np.random.rand(200, 2) * 100  # 100 points in a 100x100 grid
-#data_points = random.sample(list(all_points), 10)
+data_points = random.sample(list(all_points), 50)
 #plot_points(data_points)
 #print(data_points)
 # Settings for the clusters
@@ -601,7 +602,7 @@ cluster_std = 1.0        # Standard deviation of clusters
 X, y = make_blobs(n_samples=n_samples, n_features=n_features, centers=centers, cluster_std=cluster_std, random_state=42)
 print(y)
 
-data_points = X
+#data_points = X
 
 # We'll add 20% of the amout of data to be removal requests
 # to simulate dynamic streaming.
@@ -661,6 +662,7 @@ print("-----------final online results-----------")
 print("k = ", k)
 print("beta = ", beta)
 print("epsilon = ", epsilon)
+print("alpha:", alpha)
 #print("final fractional solution:", fractional_sol)
 print("number of centers (sum of fractional x's):", np.sum(fractional_sol))
 print("OPT recourse:", OPT_rec)
@@ -672,12 +674,6 @@ center_coordinates = random.sample(list(all_points), len(centers))
 for i in range(len(centers)):
     center_coordinates[i] = data_points[centers[i]]
 max_online_dist = max_distance_to_centers(data_points, center_coordinates)
-
-
-# (optional) for plotting
-for i in range(len(centers)):
-    center_coordinates[i] = data_points[centers[i]]
-#plot_points_and_centers(data_points, center_coordinates)
 
 print("max online distance:", max_online_dist)
 

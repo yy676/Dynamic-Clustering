@@ -588,13 +588,16 @@ def online_k_center(requests, points, k):
 ################################################### main ############################################################
 ##################################################################################################################### 
 
-## parse inputs
-# Generate random points
+############################################ Step 1: parse inputs ###################################################
+
+# Method 1: Generate random points
 np.random.seed(42)
 all_points = np.random.rand(200, 2) * 100  # 100 points in a 100x100 grid
 #data_points = random.sample(list(all_points), 100)
 #plot_points(data_points)
 #print(data_points)
+
+# Method 2: generate test points in clusters 
 # Settings for the clusters
 n_samples = 100          # Total number of points
 n_features = 2           # Number of dimensions (2D)
@@ -606,6 +609,7 @@ print(y)
 
 data_points = X
 
+# Preliminary simulation of dynamic streaming:
 # We'll add 20% of the amout of data to be removal requests
 # to simulate dynamic streaming.
 # For simplicity, whenever we encounter a removal request,
@@ -618,25 +622,6 @@ removals = np.random.choice(range(0, len(data_points)+ 1), int(len(data_points)*
 requests[removals] = -1
 #print(requests)
 
-'''
-#feed input points as clusters for alternative testing
-x_coordinates_1 = np.random.uniform(0, 50, 50)
-y_coordinates_1 = np.random.uniform(50, 100, 50)
-#data_points[0:49] = np.column_stack((x_coordinates_1, y_coordinates_1))
-#plot_points(data_points[0:49])
-
-x_coordinates_2 = np.random.uniform(50, 100, 50)
-y_coordinates_2 = np.random.uniform(50, 100, 50)
-#data_points[50:99] = np.column_stack((x_coordinates_2, y_coordinates_2))
-
-x_coordinates_3 = np.random.uniform(0, 50, 50)
-y_coordinates_3 = np.random.uniform(0, 50, 50)
-#data_points[100:149] = np.column_stack((x_coordinates_3, y_coordinates_3))
-
-x_coordinates_4 = np.random.uniform(50, 100, 50)
-y_coordinates_4 = np.random.uniform(0, 50, 50)
-#data_points[150:199] = np.column_stack((x_coordinates_4, y_coordinates_4))
-'''
 
 # Number of centers
 k = 4

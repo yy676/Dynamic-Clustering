@@ -32,7 +32,7 @@ def offline_k_center(points, k):
     
     return centers
 
-# LP relaxation for OPT_distance 
+# LP relaxation for offline k-center's OPT_distance 
 def lp_relaxation_k_center(points, k):
     num_points = len(points)
     prob = pulp.LpProblem("k_Center", pulp.LpMinimize)
@@ -74,28 +74,30 @@ def lp_relaxation_k_center(points, k):
         print(f"y[{j}] = {y[j].varValue}")
     '''
 
-    y_sum = pulp.lpSum(y[j].varValue for j in range(num_points))
+    #y_sum = pulp.lpSum(y[j].varValue for j in range(num_points))
     
     # print out the x matrix for debugging
     x_mat = np.zeros((num_points, num_points))
     for i in range(num_points):
         for j in range(num_points):
             x_mat [i, j] = x[i][j].varValue
-    print("x_mat:\n", x_mat)
+    #print("x_mat:\n", x_mat)
 
     z = np.zeros(num_points)
     for i in range(num_points):
         for j in range(num_points):
             z[i] += x_mat[i][j] * dist_mat[i][j]
-        print(z[i])
+        #print(z[i])
 
-    print("sum of y:", y_sum)
+    #print("sum of y:", y_sum)
     
     result = np.max(z)
     
     return result
 
 
+# used in conjunction with greedy approximation to calculate the max distance 
+# from a point to its nearest center
 def max_distance_to_centers(points, centers):
     max_dist = 0
     for point in points:
@@ -134,7 +136,7 @@ def plot_points(points):
 ####################################### online positive-body chasing for k-center ##################################################
 
 # setting parameters needed for online algorithm
-beta = 1.5
+beta = 2
 
 epsilon = 0.25
 
@@ -207,12 +209,10 @@ def update_packing(x, epsilon, k):
 ############################ method used to compute OPT_rec at time t #################################
 
 # arguments: 
-#   C: a list of length T that consists of violated covering constraints at time t; 
-#      C(t) is the indices of non-zero c_i's that appear in a violated covering constraint at time t: 
+#   C: a list of length T that consists of covering constraints at time t; 
+#      C(t) is the indices of non-zero c_i's that appear in a covering constraint at time t: 
 #      i.e., C(t) * x < 1; 
-#      C(t) is an empty set if no violation at t
-#   P: row t is all 1 vector if packing constraint is violated at time t; empty set otherwise
-#   covering_t, packing_t: sets that store the t's when violations happen
+#   P: a list of packing contraints at each t defined similarly to C
 #   T: the number of steps so far
 
 def compute_OPT_rec(C_list, P_list, covering_t, packing_t, t, k, epsilon, client_indices):
@@ -277,7 +277,7 @@ def compute_OPT_rec(C_list, P_list, covering_t, packing_t, t, k, epsilon, client
             l_mat[i, j] = l[i][j].varValue
             
     
-    print("Result from offline OPT_rec offline:")
+    print("Result from offline OPT_rec:")
     print("X_OPT: \n", x_mat)
     #print("l: \n", l_mat)
 

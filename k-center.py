@@ -6,7 +6,7 @@ import pulp
 from sklearn.datasets import make_blobs
 
 ############################################# set up parameters ###################################################
-beta = 1.25
+beta = 1
 epsilon = 0.25
 
 k = 4
@@ -51,7 +51,7 @@ def lp_relaxation_k_center(points, k):
     for i in range(num_points):
         for j in range(num_points):
             dist_mat[i, j] = euclidean_distance(points[i], points[j])
-        print(max(dist_mat[i]))
+        #print(max(dist_mat[i]))
     
     #print("distance matrix:\n", dist_mat)
 
@@ -295,7 +295,8 @@ def compute_OPT_rec(C_list, P_list, t, k, epsilon, client_indices):
             
     
     #print("Result from offline OPT_rec:")
-    #print("X_OPT: \n", x_mat)
+    if t < 10:
+        print("X_OPT: \n", x_mat)
     #print("l: \n", l_mat)
 
     #print("OPT_recourse this iteration = ", pulp.value(lp_prob.objective))
@@ -563,7 +564,7 @@ def online_k_center(requests, points, k):
 
             j = next(iter(uncovered))
             set_of_centers.append(j)
-            set_of_centers = list(set(set_of_centers)) # get rid of duplicates in the list
+            set_of_centers = list(set(set_of_centers)) # get rid of (potential) duplicates in the list
             total_integer_recourse += 1
             # record current_radius
             current_r = min(beta * current_OPT_dist, diam)
@@ -622,7 +623,7 @@ cluster_points, y = make_blobs(n_samples=n_samples, n_features=n_features, cente
 #print(y)
 
 # set this variable to either random_points or cluster_points
-data_points = cluster_points
+data_points = random_points
 
 ############################################## set up dynamic streaming ###############################################
 # Preliminary simulation of dynamic streaming:

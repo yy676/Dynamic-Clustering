@@ -516,7 +516,7 @@ cluster_points, y = make_blobs(n_samples=n_samples, n_features=n_features, cente
 #print(y)
 
 # set this variable to either random_points or cluster_points
-data_points = random.sample(list(random_points), 10)
+data_points = random.sample(list(random_points), 20)
 
 ############################################## set up dynamic streaming ###############################################
 # Preliminary simulation of dynamic streaming:

@@ -54,7 +54,7 @@ def lp_relaxation_k_center(points, k):
     for i in range(num_points):
         for j in range(num_points):
             dist_mat[i, j] = euclidean_distance(points[i], points[j])
-    print("distance matrix:", dist_mat)
+    #print("distance matrix:", dist_mat)
 
     # Variables
     x = pulp.LpVariable.dicts("x", (range(num_points), range(num_points)), lowBound=0, upBound=1, cat=pulp.LpContinuous)
@@ -155,21 +155,12 @@ def check_covering_feasibility(s, x):
 # we use the closed form with the lagrange multiplier here
 def update_covering(x, s, epsilon):
     d = len(s)
-    #print("d(t):", d)
-    #print("sum of x_i:", np.sum(x[s]))
     log_term = (epsilon/4 + 1) / (np.sum(x[s]) + epsilon / 4)
-    #print("value of log term:", log_term)
 
-    #if log_term > 1:
     y = np.log(log_term)
-    #print("value of y:", y)
     x[s] = (x[s] + epsilon / (4 * d)) * np.exp(y) - (epsilon / (4 * d))
     for i in s:
         x[i] = max(0, x[i])
-    #print("updated x's:", x[s])
-    #print("sum of x's:", np.sum(x[s]))
-
-    #print("updated fractional solution (convering):", x)
 
     return x
 
@@ -185,8 +176,6 @@ def update_packing(x, epsilon, k):
         neg_z = np.log(((1 + epsilon) * k) / log_term_bottom)
         x = x * np.exp(neg_z)
     
-    #print("updated fractional solution (packing):", x)
-
     return x
 
 
@@ -251,11 +240,6 @@ def compute_OPT_rec(C_list, P_list, t, k, epsilon, client_indices):
             x_mat [i, j] = x[i][j].varValue
             l_mat[i, j] = l[i][j].varValue
     
-    #print("Result from offline OPT_rec:")
-    #if t < 10:
-    #print("X_OPT: \n", x_mat)
-    #print("l: \n", l_mat)
-    
     # return the last row of the x matrix as the fractional solution for rounding
     return pulp.value(lp_prob.objective), x_mat[-1]
 
@@ -274,8 +258,6 @@ def find_balls(data_points, client_indices, center_index, radius, radius_hat):
             B_i.append(index)
             
         if euclidean_distance(data_points[index], data_points[center_index]) <= radius_hat:
-            print("client:", index)
-            print("distance from point:", euclidean_distance(data_points[index], data_points[center_index]))
             B_i_hat.append(index)
     
     return B_i, B_i_hat
@@ -334,8 +316,6 @@ def online_k_center(requests, points, k):
                         if client[0] == client_to_remove:
                             clients.remove(client)
             continue
-        
-        print("\nt = ", t)
 
         # otherwise, the request is an insertion, add the new client to the set of active clients
         current_client = (t, points[t])
@@ -349,9 +329,6 @@ def online_k_center(requests, points, k):
         centers_offline = offline_k_center(client_points, k)
         approx_dist = max_distance_to_centers(client_points, centers_offline)
         current_OPT_dist = lp_relaxation_k_center(client_points, k)
-        print("current OPT distance:", current_OPT_dist)
-        print("beta * OPT distance:", beta * current_OPT_dist)
-        print("diameter:", diam)
 
         # stores all covering constraints at t for computing OPT_rec
         C_t =[]
@@ -362,13 +339,10 @@ def online_k_center(requests, points, k):
         # check if covering constraint is violated (for the new client)
         # if so, update the values of x's according to B_j(t) of each active client
         if check_covering_feasibility(s, x) == False:
-            #print("covering violation!")
             # covering constraint not satisfied, need to update values of x's in s
             # add the set s to C_list for computing OPT_rec
             for client_index in client_indices:
-                #print("\nfor point:", client_index)
                 s_set = find_candidates(client_indices, points, points[client_index], min(beta * current_OPT_dist, diam))
-                #print("points in range:", s_set)
                 x_new = update_covering(x, s_set, epsilon)
 
         # check if packing constraint is violated
@@ -383,27 +357,16 @@ def online_k_center(requests, points, k):
         P_list.append(active_set)
 
         # recheck again the covering constraint's for all points 
-        #print("\nrecheck covering constraints...")
         for client_index in client_indices:
-            #print("\nfor point:", client_index)
             s_set = find_candidates(client_indices, points, points[client_index], min(beta * current_OPT_dist, diam))
-            #print("points in range:", s_set)
             C_t.append(s_set)
 
             if (check_covering_feasibility(s_set, x_new) == False):
                 x_new = update_covering(x_new, s_set, epsilon)
-                #print("re-adjusted solution:", x_new)
-
-        print("\nfractional solution this round:", x)
-        #print("value of k this iteration:", np.sum(x_new))
         
         # record all covering constraints for this round
         C_list.append(C_t)
-        #print("\nall covering constraints at this iteration:", C_t)
-        #for c in C_t:
-            #print("constraint checking:", np.sum(x[c]))
-        
-        #print("\nComputing OPT recourse...")
+    
         OPT_recourse, x_OPT = compute_OPT_rec(C_list, P_list, t, k, epsilon, client_indices)
 
         # update total recourse in l1-norm
@@ -418,11 +381,6 @@ def online_k_center(requests, points, k):
         # identify the balls/set of points that are B_i and B_i_hat for each i in set_of_centers
         # while building the balls B_i, drop any i from set_of_centers if it has mass less than 1-epsilon
 
-        print("\n")
-        print("Rounding...")
-        print("current set of centers:", set_of_centers)
-
-        #list_of_B_i = []
         S_prev = copy.deepcopy(set_of_centers)
         
         list_of_B_i_hat = []
@@ -432,13 +390,7 @@ def online_k_center(requests, points, k):
             if center not in client_indices: # this means 'center' was a removed point at some t
                 set_of_centers.remove(center)
                 #total_integer_recourse += 1
-                #print("updated set of centers:", set_of_centers)
                 continue
-            
-            print("\n")
-            print("for center:", center)
-            print("r_i of this center:", radius_of_centers[center])
-            print("r_i_hat of this center:", alpha * min(beta * current_OPT_dist, diam))
             
             B_i, B_i_hat = find_balls(data_points, client_indices, center, radius_of_centers[center], alpha * min(beta * current_OPT_dist, diam))
             
@@ -446,25 +398,17 @@ def online_k_center(requests, points, k):
             mass = 0
             for index_of_point in B_i:
                 mass += x[index_of_point]  # currently using the solution returned by OPT_rec for rounding
-            
-            print("mass for center", mass)
 
             if mass < 1 - epsilon:
                 set_of_centers.remove(center)
                 #total_integer_recourse += 1
-                print("center dropped from set:", center)
             else:
                 list_of_B_i_hat.append(B_i_hat)
         
         covered_points = set(item for sublist in list_of_B_i_hat for item in sublist)
-        #print("\n")
-        print("covered points:", covered_points)
-        print("all clients:", client_indices)
         while len(covered_points) < len(client_indices):
         # find the clients that are not covered by the current set of centers
             uncovered = set(client_indices) - covered_points
-            print("uncovered clients:", uncovered)
-
             j = next(iter(uncovered))
             set_of_centers.append(j)
             set_of_centers = list(set(set_of_centers)) # get rid of (potential) duplicates in the list
@@ -473,36 +417,23 @@ def online_k_center(requests, points, k):
             current_r = min(beta * current_OPT_dist, diam)
             radius_of_centers[j] = current_r
 
-            print("new center added to set:", j)
-            print("With radius_i:", current_r)
-
             S = copy.deepcopy(set_of_centers)
             for center_index in S:
                 ball_dist = radius_of_centers[j] + radius_of_centers[center_index] + delta * min(radius_of_centers[j], radius_of_centers[center_index])
-                print("distance between two centers:", euclidean_distance(points[center_index], points[j]))
-                print("ball disjoint-radius:", ball_dist)
                 if center_index != j and euclidean_distance(points[center_index], points[j]) <= ball_dist:
                     set_of_centers.remove(center_index)
                     #total_integer_recourse += 1
-                    print("center {center_index} dropped", center_index)
-
+                    
             # update the the set of B_i_hats
-            #print("update ball...")
             list_of_B_i_hat = []
             for center in set_of_centers:
                 B_i, B_i_hat = find_balls(points, client_indices, center, radius_of_centers[center], alpha * min(beta * current_OPT_dist, diam))
                 list_of_B_i_hat.append(B_i_hat)
             covered_points = set(item for sublist in list_of_B_i_hat for item in sublist)
-            print("covered points:", covered_points)
-        
-        print("all clients covered!")
-        print("selected centers for this round:", set_of_centers)
-        #print("total integer recourse so far:", total_integer_recourse)
         
         # compute rounding recourse this round
         diff = set(S_prev) ^ set(set_of_centers)
         total_integer_recourse += len(diff)
-        #print ("rounding recourse this round:", len(diff))
 
         t += 1
         final_set = client_points
@@ -529,12 +460,11 @@ n_features = 2           # Number of dimensions (2D)
 centers = 4              # Number of clusters
 cluster_std = 1.0        # Standard deviation of clusters
 cluster_points, y = make_blobs(n_samples=n_samples, n_features=n_features, centers=centers, cluster_std=cluster_std, random_state=42)
-#print(y)
 
 # set this variable to either random_points or cluster_points
-#data_points = random.sample(list(random_points), 100)
-data_points = cluster_points
-data_points = random.sample(list(data_points), 20)
+data_points = random.sample(list(random_points), 100)
+#data_points = cluster_points
+#data_points = random.sample(list(data_points), 20)
 random.shuffle(data_points)
 
 ############################################## set up dynamic streaming ###############################################
@@ -546,8 +476,8 @@ random.shuffle(data_points)
 # In our request array. a +1 indicates an insertion of a client;
 # -1 indicates a removal.
 requests = np.ones(int(len(data_points)))
-#removals = np.random.choice(range(0, len(data_points)+ 1), int(len(data_points)*0.2), replace=False)
-#requests[removals] = -1
+removals = np.random.choice(range(0, len(data_points)+ 1), int(len(data_points)*0.2), replace=False)
+requests[removals] = -1
 #print(requests)
 
 ############################################ solve the offline problem #################################################
@@ -560,9 +490,6 @@ max_dist_approx = max_distance_to_centers(data_points, approx_centers)
 # This value is used as OPT(t) in the online algorithm for each t
 max_dist = lp_relaxation_k_center(data_points, k)
 
-print("\n")
-print("OPT distance from lp relaxation:", max_dist)
-
 ########################################### run online algorithm including rouding ######################################
 
 fractional_sol, recourse, centers, OPT_rec, total_int_recourse = online_k_center(requests, data_points, k) 
@@ -573,7 +500,6 @@ print("k = ", k)
 print("beta = ", beta)
 print("epsilon = ", epsilon)
 print("alpha:", alpha)
-#print("final fractional solution:", fractional_sol)
 print("number of centers (sum of fractional x's):", np.sum(fractional_sol))
 print("OPT recourse:", OPT_rec)
 print("total fractional online recourse:", recourse)

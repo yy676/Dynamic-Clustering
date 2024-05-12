@@ -462,9 +462,8 @@ cluster_std = 1.0        # Standard deviation of clusters
 cluster_points, y = make_blobs(n_samples=n_samples, n_features=n_features, centers=centers, cluster_std=cluster_std, random_state=42)
 
 # set this variable to either random_points or cluster_points
-data_points = random.sample(list(random_points), 100)
+data_points = random.sample(list(random_points), 50)
 #data_points = cluster_points
-#data_points = random.sample(list(data_points), 20)
 random.shuffle(data_points)
 
 ############################################## set up dynamic streaming ###############################################
@@ -475,7 +474,7 @@ random.shuffle(data_points)
 # we randomly sample an active client point that is not in the set of centers
 # In our request array. a +1 indicates an insertion of a client;
 # -1 indicates a removal.
-requests = np.ones(int(len(data_points)))
+requests = np.ones(int(len(data_points) * 1.2))
 removals = np.random.choice(range(0, len(data_points)+ 1), int(len(data_points)*0.2), replace=False)
 requests[removals] = -1
 #print(requests)
@@ -489,6 +488,7 @@ max_dist_approx = max_distance_to_centers(data_points, approx_centers)
 # Offline LP relaxation to get OPT_dist
 # This value is used as OPT(t) in the online algorithm for each t
 max_dist = lp_relaxation_k_center(data_points, k)
+print("Offline OPT max distance:", max_dist)
 
 ########################################### run online algorithm including rouding ######################################
 

@@ -298,9 +298,9 @@ def online_k_center(requests, points, k):
         # remove the randomly sampled client from the set of active clients
         if requests[r] == -1:
             # random sample an active client to remove
-            if len(client_indices) and len(client_indices) > len(set_of_centers) > 0:
+            if len(client_indices) > 0:
                 client_to_remove = random.randint(0, t)
-                while client_to_remove in set_of_centers and client_to_remove not in client_indices:
+                while client_to_remove in set_of_centers or client_to_remove not in client_indices:
                     client_to_remove = random.randint(0, t)
                 
                 x[client_to_remove] = 0
@@ -486,7 +486,7 @@ random.shuffle(data_points)
 
 ############################################## set up dynamic streaming ###############################################
 # Preliminary simulation of dynamic streaming:
-# We'll add 20% of the amout of data to be removal requests
+# We'll add 10 - 20% of the amout of data to be removal requests
 # to simulate dynamic streaming.
 # For simplicity, whenever we encounter a removal request,
 # we randomly sample an active client point that is not in the set of centers

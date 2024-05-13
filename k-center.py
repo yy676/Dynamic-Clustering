@@ -415,7 +415,7 @@ def online_k_center(requests, points, k):
             # drop any B_i whose mass is too small
             mass = 0
             for index_of_point in B_i:
-                mass += x_OPT[index_of_point]  # currently using the solution returned by OPT_rec for rounding
+                mass += x[index_of_point]  # currently using the solution returned by OPT_rec for rounding
 
             if mass < 1 - epsilon:
                 set_of_centers.remove(center)

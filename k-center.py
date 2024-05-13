@@ -6,7 +6,7 @@ import pulp
 from sklearn.datasets import make_blobs
 
 ############################################# set up parameters ###################################################
-beta = 1
+beta = 1.25
 epsilon = 0.25
 
 k = 4
@@ -16,7 +16,7 @@ delta = np.sqrt(2)
 # variable needed to track active clients
 final_set = []
 
-################################################ useful methods ###################################################
+################################################ useful helpers ###################################################
 def euclidean_distance(x, y):
     return np.sqrt(np.sum((x - y)**2))
 
@@ -31,7 +31,6 @@ def calculate_diameter(points):
     return diameter
 
 ############################### offline algorithm to produce offline OPT distance #################################
-
 # greedy approximation to compute OPT_distance
 def offline_k_center(points, k):
     # Initialize the first center randomly
@@ -115,12 +114,13 @@ def plot_points_and_centers(points, centers):
     plt.grid(True)
     plt.show()
 
-####################################### online positive-body chasing for k-center ##################################################
+####################################### online update algorithm for k-center ##################################################
 
 ####################################### functions needed for main method ############################################################
 
 # update the covering constraints to accommodate insertion and deletion of clients
 # (potentially needed)
+'''
 def update_constraints(C,s, n):
     # update the constraint matrix that for each client, Cx >= 1
     # where row t in C for client t has 0s at entries in s
@@ -129,6 +129,7 @@ def update_constraints(C,s, n):
     C.append(new_row)
     
     return C
+'''
 
 # find all points within the radius of the current client
 # this step can be thought of as updating the covering constraint
@@ -291,7 +292,7 @@ def online_k_center(requests, points, k):
     t = 0  # for indexing the data points     
     for r in range(len(requests)):
 
-        x_old = copy.deepcopy(x)
+        x_old = np.copy(x)
 
         # if requests[r] == 1, then the current request is a removal
         # remove the randomly sampled client from the set of active clients
@@ -329,6 +330,7 @@ def online_k_center(requests, points, k):
         centers_offline = offline_k_center(client_points, k)
         approx_dist = max_distance_to_centers(client_points, centers_offline)
         current_OPT_dist = lp_relaxation_k_center(client_points, k)
+        current_OPT_dist = approx_dist
 
         # stores all covering constraints at t for computing OPT_rec
         C_t =[]
@@ -341,13 +343,14 @@ def online_k_center(requests, points, k):
         if check_covering_feasibility(s, x) == False:
             # covering constraint not satisfied, need to update values of x's in s
             # add the set s to C_list for computing OPT_rec
-            for client_index in client_indices:
-                s_set = find_candidates(client_indices, points, points[client_index], min(beta * current_OPT_dist, diam))
-                x_new = update_covering(x, s_set, epsilon)
+            x_new = update_covering(x, s, epsilon)
+        else:
+            t += 1
+            continue
 
         # check if packing constraint is violated
         # if so, update the values of x's
-        if (np.sum(x) > (1+epsilon) * k):
+        if (np.sum(x_new) > (1+epsilon) * k):
             x_new = update_packing(x_new, epsilon, k)
 
         # record the packing constraint for this iteration
@@ -357,12 +360,27 @@ def online_k_center(requests, points, k):
         P_list.append(active_set)
 
         # recheck again the covering constraint's for all points 
+        A_t = np.zeros((len(points), len(points)))
         for client_index in client_indices:
             s_set = find_candidates(client_indices, points, points[client_index], min(beta * current_OPT_dist, diam))
             C_t.append(s_set)
+            A_t[client_index][s_set] = 1
 
-            if (check_covering_feasibility(s_set, x_new) == False):
+        A_t_x = np.dot(A_t, x_new)
+        while np.all(A_t_x[client_indices] >= 1 - 0.001) == False:
+            #if (check_covering_feasibility(s_set, x_new) == False):
+            for client_index in client_indices:
+                s_set = find_candidates(client_indices, points, points[client_index], min(beta * current_OPT_dist, diam))
                 x_new = update_covering(x_new, s_set, epsilon)
+            A_t_x_new = np.dot(A_t, x_new)
+            if (np.all(A_t_x_new - A_t_x == 0)):
+                break
+            A_t_x = copy.deepcopy(A_t_x_new)
+
+        for client_index in client_indices:
+            s_set = find_candidates(client_indices, points, points[client_index], min(beta * current_OPT_dist, diam))
+            if check_covering_feasibility(s_set, x_new) == False:
+                update_covering(x_new, s_set, epsilon)   
         
         # record all covering constraints for this round
         C_list.append(C_t)
@@ -397,7 +415,7 @@ def online_k_center(requests, points, k):
             # drop any B_i whose mass is too small
             mass = 0
             for index_of_point in B_i:
-                mass += x[index_of_point]  # currently using the solution returned by OPT_rec for rounding
+                mass += x_OPT[index_of_point]  # currently using the solution returned by OPT_rec for rounding
 
             if mass < 1 - epsilon:
                 set_of_centers.remove(center)
@@ -436,7 +454,7 @@ def online_k_center(requests, points, k):
         total_integer_recourse += len(diff)
 
         t += 1
-        final_set = client_points
+        #final_set = client_points
 
     return x, total_recourse, set_of_centers, OPT_recourse, total_integer_recourse
 
@@ -462,8 +480,8 @@ cluster_std = 1.0        # Standard deviation of clusters
 cluster_points, y = make_blobs(n_samples=n_samples, n_features=n_features, centers=centers, cluster_std=cluster_std, random_state=42)
 
 # set this variable to either random_points or cluster_points
-data_points = random.sample(list(random_points), 50)
-#data_points = cluster_points
+#data_points = random_points
+data_points = cluster_points
 random.shuffle(data_points)
 
 ############################################## set up dynamic streaming ###############################################
@@ -474,8 +492,8 @@ random.shuffle(data_points)
 # we randomly sample an active client point that is not in the set of centers
 # In our request array. a +1 indicates an insertion of a client;
 # -1 indicates a removal.
-requests = np.ones(int(len(data_points) * 1.2))
-removals = np.random.choice(range(0, len(data_points)+ 1), int(len(data_points)*0.2), replace=False)
+requests = np.ones(int(len(data_points) * 1.1))
+removals = np.random.choice(range(0, len(data_points)+ 1), int(len(data_points)*0.1), replace=False)
 requests[removals] = -1
 #print(requests)
 
@@ -484,11 +502,11 @@ requests[removals] = -1
 # (optional) greedy approximation of k-center for 
 approx_centers = offline_k_center(data_points, k)
 max_dist_approx = max_distance_to_centers(data_points, approx_centers)
+#print("max approx distance:", max_dist_approx)
 
 # Offline LP relaxation to get OPT_dist
 # This value is used as OPT(t) in the online algorithm for each t
 max_dist = lp_relaxation_k_center(data_points, k)
-print("Offline OPT max distance:", max_dist)
 
 ########################################### run online algorithm including rouding ######################################
 
@@ -511,6 +529,7 @@ for i in range(len(centers)):
     center_coordinates[i] = data_points[centers[i]]
 max_online_dist = max_distance_to_centers(data_points, center_coordinates)
 
+print("Offline OPT max distance:", max_dist)
 print("max online distance:", max_online_dist)
 
 print("alpha * beta * offline max distance:", alpha * beta * max_dist)

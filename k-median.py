@@ -79,10 +79,6 @@ def lp_relaxation_facility_location(points, candidate_locations, cost, k):
     # Solve the problem
     problem.solve(pulp.PULP_CBC_CMD(msg=False))
 
-    # Print results
-    #for v in problem.variables():
-        #print(f"{v.name} = {v.varValue}")
-
      # print out the x matrix for debugging
     total_cost = 0
     y_mat = np.zeros((num_facilities, num_clients))

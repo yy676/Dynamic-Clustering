@@ -1,10 +1,9 @@
 import numpy as np
-import scipy.optimize
 import matplotlib.pyplot as plt
-from scipy.optimize import minimize, Bounds
 import copy
 import random
 import pulp
+from gurobipy import Model, GRB, quicksum, abs_
 
 ############################################# set up parameters ###################################################
 beta = 1.5
@@ -15,8 +14,6 @@ alpha = 11
 delta = 2
 gamma = float(10 / 9)
 eta = 1 / np.log((alpha - gamma * (1 + delta))/ (2 * gamma))
-
-cost = 10
 
 ################################################ useful methods ###################################################
 def euclidean_distance(x, y):
@@ -34,8 +31,17 @@ def calculate_diameter(points):
 
 ############################### offline algorithm to produce offline OPT distance #################################
 
-def approx_facility_location(points, cost):
-    return
+def calculate_total_cost(points, open_facilities, uniform_cost):
+    total_cost = 0
+    for client in points:
+        distance = float('inf')
+        for facility in open_facilities:
+            if euclidean_distance(points[client], points[facility]) < distance:
+                distance = euclidean_distance(points[client], points[facility])
+        total_cost += distance
+    total_cost += uniform_cost * len(open_facilities)
+
+    return total_cost
 
 # LP relaxation for facility location
 def lp_relaxation_facility_location(points, candidate_locations, cost):
@@ -48,12 +54,13 @@ def lp_relaxation_facility_location(points, candidate_locations, cost):
     for i in range(num_facilities):
         for j in range(num_clients):
             dist_mat[i][j] = euclidean_distance(candidate_locations[i], points[j])
+    print("\ndistance matrix:", dist_mat)
     
-    problem = pulp.LpProblem("Facility Location", pulp.LpMinimize)
+    problem = pulp.LpProblem("Facility_Location", pulp.LpMinimize)
 
     # Decision variables
-    x = [pulp.LpVariable(f"x_{i}", 0, 1) for i in range(num_facilities)]
-    y = [[pulp.LpVariable(f"y_{i}_{j}", 0, 1) for j in range(num_clients)] for i in range(num_facilities)]
+    x = [pulp.LpVariable(f"x_{i}", 0, 1, cat=pulp.LpContinuous) for i in range(num_facilities)]
+    y = [[pulp.LpVariable(f"y_{i}_{j}", 0, 1, cat=pulp.LpContinuous) for j in range(num_clients)] for i in range(num_facilities)]
 
     # Objective function
     problem += pulp.lpSum([cost * x[i] for i in range(num_facilities)]) + \
@@ -74,7 +81,19 @@ def lp_relaxation_facility_location(points, candidate_locations, cost):
     #for v in problem.variables():
         #print(f"{v.name} = {v.varValue}")
 
-    print(f"Total cost = {pulp.value(problem.objective)}")
+     # print out the x matrix for debugging
+    y_mat = np.zeros((num_facilities, num_clients))
+    for i in range(num_facilities):
+        for j in range(num_clients):
+            y_mat[i, j] = y[i][j].varValue
+    print("Y matrix:\n", y_mat.T)
+
+    x_vec = np.zeros(num_facilities)
+    for i in range(num_facilities):
+        x_vec[i] = x[i].varValue
+    print("x vector:\n", x_vec)
+
+    #print(f"Total cost from lp= {pulp.value(problem.objective)}")
 
     return pulp.value(problem.objective)
 
@@ -101,63 +120,83 @@ def plot_points_and_centers(points, centers):
 # Compute the OPT_rec LP and use this solution for rounding 
 # T: the number of steps so far
 
-def compute_OPT_rec(t, candidate_locations, distances, cost, OPT, beta, epsilon):
-
+def compute_OPT_rec(t, valid_indices, candidate_locations, distances, cost, OPT_list, beta, epsilon):
+    #print("\nComputing OPT_recourse...")
     # Problem data and parameters
     T = t + 1  # Number of time periods
     num_facilities = len(candidate_locations)
-    num_clients = len(distances[0])
+    num_clients = len(candidate_locations)
     #weights = {t: [1]*n for t in range(0, T)}  # Example weights
 
-    # Create the LP problem object
-    lp_prob = pulp.LpProblem("OPT_recourse", pulp.LpMinimize)
+    #print("OPT cost:", OPT)
+    #print("valid indices:", valid_indices)
+    #print("budget beta * (1 + epsilon) * OPT = ", beta * (1 + epsilon) * OPT_list[t])
 
-    # Decision variables x_i^t and l_i^t
-    x = pulp.LpVariable.dicts("x", (range(T), range(num_facilities)), lowBound=0)
-    y = [[[pulp.LpVariable(f"y_time_{t}_facility_{i}_client_{j}", lowBound=0)
-       for t in range(T)]
-       for i in range(num_facilities)]
-       for j in range(num_clients)]
-    l = pulp.LpVariable.dicts("l", (range(T), range(num_facilities)), lowBound=0)
+    m = Model("dynamic_optimization")
+    m.setParam('OutputFlag', 0)
 
-    # Objective function
-    lp_prob += pulp.lpSum(l[t][i] for i in range(num_facilities) for t in range(T)) 
+    # Create variables
+    x = {(i, t): m.addVar(vtype=GRB.CONTINUOUS, lb=0, ub=1, name=f"x_{i}_{t}") for t in range(T) for i in valid_indices[t]}
+    y = {(i, j, t): m.addVar(vtype=GRB.CONTINUOUS, lb=0, ub=1, name=f"y_{i}_{j}_{t}") for t in range(T) for i in valid_indices[t] for j in valid_indices[t]}
+    abs_diff = {(i, t): m.addVar(vtype=GRB.CONTINUOUS, name=f"abs_diff_{i}_{t}") for i in range(T) for t in range(T)}
+
+    # Objective function: Minimize the sum of absolute changes in x
+    m.setObjective(quicksum(abs_diff[i, t] for i in range(T) for t in range(1, T)), GRB.MINIMIZE)
 
     # Constraints
     for t in range(T):
-        lp_prob += pulp.lpSum(y[t][i][j] for i in range(num_facilities) for j in range(num_clients)) >= 1, f"CoverageConstraint_{t}"
-        lp_prob += pulp.lpSum(cost * x[t][i] + distances[i][j] * y[t][i][j] for i in range(num_facilities) for j in range(num_clients)) <= beta * OPT * (1 + epsilon)
-        for i in range(num_facilities):
-        # include the recourse at t = 0
-            for j in range(num_clients):
-                lp_prob += x[t][i] >= y[t][i][j]
-    
+        for j in valid_indices[t]:
+            m.addConstr(quicksum(y[(i, j, t)] for i in valid_indices[t]) >= 1, name=f"Coverage_{j}_{t}")
+            for i in valid_indices[t]:
+                m.addConstr(y[(i, j, t)] <= x[(i, t)], name=f"Cap_{i}_{j}_{t}")
+
+        # Budget constraints
+        m.addConstr(quicksum(cost * x[(i, t)] +  quicksum(distances[i][j] * y[(i, j, t)] for j in valid_indices[t]) for i in valid_indices[t]) <= (1 + epsilon) * beta * OPT_list[t], name=f"Budget_{t}")
+
     for t in range(1, T):
-        for i in range(num_facilities):
-            lp_prob += x[t][i] - x[t-1][i] <= l[t][i]
-            lp_prob += x[t-1][i] - x[t][i] <= l[t][i]
-    
-    # Solve the problem
-    lp_prob.solve(pulp.PULP_CBC_CMD(msg=False))
+        for i in set(valid_indices[t]) & set(valid_indices[t-1]):  # Only for i present in both t and t-1
+            m.addConstr(abs_diff[i, t] >= x[i, t] - x[i, t-1])
+            m.addConstr(abs_diff[i, t] >= -(x[i, t] - x[i, t-1]))
 
-    # Output results
-    
-    # printing x and l matrices for debugging
+    # Solve the model
+    m.optimize()
+
     x_mat = np.zeros((T, num_facilities))
-    l_mat = np.zeros((T, num_facilities))
 
-    for i in range(T):
-        for j in range(num_facilities):
-            x_mat [i, j] = x[i][j].varValue
-            l_mat[i, j] = l[i][j].varValue
-    
-    print("X_OPT:\n" , x_mat)
-    #print("l: \n", l_mat)
+    # Output the results
+    if m.status == GRB.OPTIMAL:
+        print("Optimal solution found:")
+        for t in range(T):
+            for i in valid_indices[t]:
+                #print(f"x_{i}_{t} = {x[(i, t)].X}")
+                x_mat[t][i] = x[(i, t)].X
+        print("X_OPT:\n")
+        print(x_mat)
+
+        y_mat_t = np.zeros((num_clients, num_facilities))
+        for t in range(T):
+            cost_sum = 0
+            #print ("\nfor t = ", t)
+            #print("budget beta * (1 + epsilon) * OPT = ", beta * (1 + epsilon) * OPT_list[t])
+            for j in valid_indices[t]:
+                for i in valid_indices[t]:
+                    #print(f"y_{i}_{j}_{t} = {y[(i, j, t)].X}")
+                    y_mat_t[j][i] = y[(i, j, t)].X
+                    cost_sum += distances[i][j] * y_mat_t[j][i]
+            cost_sum += quicksum(cost * x_mat[t, i] for i in range(len(x_mat[0])))
+            #print("total cost this round:", cost_sum)
+            print("y matrix: ", t)
+            print(y_mat_t)
+        
+        objective = 0
+        for t in range(1, T):
+            objective += quicksum(abs(x_mat[t] - x_mat[t-1]))
+        objective += quicksum(x_mat[0])
+        #print("objective value:", objective)
 
     #print("Total OPT_recourse = ", pulp.value(lp_prob.objective))
-    
-
-    return pulp.value(lp_prob.objective), x_mat[-1], y[-1]
+    #print("Status:", pulp.LpStatus[lp_prob.status])
+    return x_mat[-1], y_mat_t, objective #pulp.value(lp_prob.objective) , x_mat[-1], y[-1]
 
 
 ######################################### helper for rounding ###########################################
@@ -181,24 +220,25 @@ def online_facility_location(requests, points, cost):
 
     num_clients = len(points)
     num_facilities = len(points)
+    
+    valid_indices = []
+    OPT_list = []
 
     # initialize the vector x with all 0s of dimension len(points)
     x = np.zeros(num_facilities)
     y = np.zeros((num_facilities, num_clients))
 
+    dist_mat = np.zeros((num_facilities, num_clients))
+    for i in range(num_facilities):
+        for j in range(num_clients):
+            dist_mat[i][j] = euclidean_distance(points[i], points[j])
+        
+    dist_mat_list = []
+
     client_indices = []
     client_coordinates = []
     open_facilities = []
     active_clients = []
-
-    # initialize variables needed for computing OPT_rec:
-    # a t-by-n list of lists C, whose number of rows grows as t increases,
-    # at each time t, if a covering constraint is violated,
-    # append to C the vector c(t) such that the constraint c(t) * x(t) < 1,
-    # otherwise, append an empty list
-    # A matrix P for packing constraints is defined similarly
-    # auxiliary sets violated_covering_t, violated_packing_t that store the values of t when a 
-    # covering/packing constraint is violated at t
 
     B = [[] for _ in range(len(active_clients))]
     radius = np.zeros(num_clients)
@@ -207,15 +247,12 @@ def online_facility_location(requests, points, cost):
     t = 0  # for indexing the data points     
     for r in range(len(requests)):
 
-        x_old = copy.deepcopy(x)
+        x_old = np.copy(x)
 
-        #print("\n")
-        #print("---------request:", r)
+        print("\n")
+        print("---------request:", r)
+        print("t =", t)
         
-        # at each iteration if the request is an insertion,
-        # add new client to the set of points that are known 
-        #candidate_index = np.append(candidate_index, int(t))
-        #candidates = np.append(candidates, points[t])
         if requests[r] == -1:
             
             # random sample an active client to 
@@ -235,11 +272,15 @@ def online_facility_location(requests, points, cost):
         client_indices.append(t)
         client_coordinates.append(points[t])
 
+        indices_t = copy.deepcopy(client_indices)
+        valid_indices.append(indices_t)
+        print("valid indices so far:", valid_indices)
+
         facility_locations = client_coordinates
         client_locations = client_coordinates
 
-        num_clients = len(client_locations)
-        num_facilities = len(facility_locations)
+        current_num_clients = len(client_locations)
+        current_num_facilities = len(facility_locations)
 
         facility_indices = client_indices
         
@@ -247,29 +288,31 @@ def online_facility_location(requests, points, cost):
         #print("t= ", t)
         #print("current client:", client_coordinates[t])
 
-        # search for points within the radius of the current client
-        # the radius at each t is defined as: min(diam(t), beta * OPT(t))
-        #diam = calculate_diameter(client_points)
-        #centers_offline = offline_k_center(client_points, k)
-
-        # populate distance matrix at t:
-        # calculate distance matrix
-        dist_mat = np.zeros((num_facilities, num_clients))
-        for i in range(num_facilities):
-            for j in range(num_clients):
-                dist_mat[i][j] = euclidean_distance(facility_locations[i], client_locations[j])
-        
         current_OPT_cost = lp_relaxation_facility_location(client_locations, facility_locations, cost)
+        OPT_list.append(current_OPT_cost)
 
         #print("diam(t):", diam)
-        print("curront_OPT_cost:", current_OPT_cost)
+        print("current_OPT_cost:", current_OPT_cost)
+
+        current_dist_mat = np.zeros((current_num_facilities, current_num_clients))
+        for i in range(current_num_facilities):
+            for j in range(current_num_clients):
+                current_dist_mat[i][j] = dist_mat[i][j]
+
+        print("current distance matrix:")
+        print(current_dist_mat)
+        #dist_mat_list.append(current_dist_mat)
         
-        OPT_recourse, x_OPT, y_OPT = compute_OPT_rec(t, facility_locations, dist_mat, cost, current_OPT_cost, beta, epsilon)
+        x_OPT, y_OPT, OPT_recourse = compute_OPT_rec(t, valid_indices, facility_locations, current_dist_mat, cost, OPT_list, beta, epsilon)
 
         print("fractional solution this round:", x_OPT)
         
         #################################### rounding procedure begins from here ####################################
 
+        # R_j for each client j is the fractional connection cost sum(distance[i][j] * y[i][j])
+        # B_j of each client j is the set of facility locations within radius[j] of j
+        # during rounding at each iteration, we first determine these two variables for each j
+        # we then drop any ball whose mass is too small (< 1 / alpha)
         R_j = np.zeros(num_clients)
         for client in client_indices:
             for i in range(len(num_facilities)):
@@ -280,6 +323,8 @@ def online_facility_location(requests, points, cost):
                 active_clients.remove(client)
                 open_facilities.remove(facility_of_client[client])
         
+        # Iteratively add any client j that is not covered, i.e., a j that is farther than 
+        # alpha * R_j away from all open facilities
         uncovered_clients = []
         for client in client_indices:
             covered = False
@@ -318,12 +363,12 @@ def online_facility_location(requests, points, cost):
 # Generate random points
 np.random.seed(42)
 all_points = np.random.rand(200, 2) * 100  # 100 points in a 100x100 grid
-data_points = random.sample(list(all_points), 10)
+data_points = random.sample(list(all_points), 5)
 #candidate_locations = data_points
 #plot_points(data_points)
 #print(data_points)
 
-# We'll add 20% of the amout of data to be removal requests
+# We'll add 10-20% of the amout of data to be removal requests
 # to simulate dynamic streaming.
 # For simplicity, whenever we encounter a removal request,
 # we randomly sample an active client point that is not in the set of centers
@@ -337,7 +382,7 @@ requests = np.ones(int(len(data_points)))
 
 # First Solve the offline k-center problem
 # Calculate LP
-fractional_sol, open_facilities, OPT_rec, recourse = online_facility_location(requests, data_points, cost)
+#fractional_sol, open_facilities, OPT_rec, recourse = online_facility_location(requests, data_points, cost)
 
 print("\n")
 #print("Approx maximum distance to nearest center:", max_dist_approx)
@@ -348,22 +393,28 @@ print("\n")
 print("-----------final online results-----------")
 print("beta = ", beta)
 print("epsilon = ", epsilon)
-print("final fractional solution:", fractional_sol)
-print("OPT recourse:", OPT_rec)
-print("total online recourse:", recourse)
+#print("final fractional solution:", fractional_sol)
+#print("OPT recourse:", OPT_rec)
+#print("total online recourse:", recourse)
 #print("final selected centers:", centers)
 
 # (optional) for plotting
 #for i in range(len(centers)):
     #center_coordinates[i] = data_points[centers[i]]
 #plot_points_and_centers(data_points, center_coordinates)
+#uniform_cost = calculate_diameter(data_points) 
+uniform_cost = 20
+print("uniform cost:", uniform_cost)
 
-OPT_cost = lp_relaxation_facility_location(data_points, data_points, cost)
-print("OPT cost from lp relaxation:", OPT_cost)
+offline_OPT_cost = lp_relaxation_facility_location(data_points, data_points, uniform_cost)
+print("offline OPT cost from lp:", offline_OPT_cost)
 
-print("max online cost:", OPT_cost)
-
-print("alpha * beta * offline OPT cost:", alpha * beta * OPT_cost)
+fractional_x, open_facilities, OPT_recourse, rounding_recourse = online_facility_location(requests, data_points, uniform_cost)
+print("final open facilities:", open_facilities)
+print("OPT recourse:", OPT_recourse)
+#print("total rounding recourse:", rounding_recourse)
+print("final online cost:", calculate_total_cost(data_points, open_facilities, uniform_cost))
+print("alpha * beta * offline OPT cost:", alpha * beta * offline_OPT_cost)
 
 # Plot the points and the selected centers
 #plot_points_and_centers(data_points, approx_centers)

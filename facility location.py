@@ -77,10 +77,6 @@ def lp_relaxation_facility_location(points, candidate_locations, cost):
     # Solve the problem
     problem.solve(pulp.PULP_CBC_CMD(msg=False))
 
-    # Print results
-    #for v in problem.variables():
-        #print(f"{v.name} = {v.varValue}")
-
      # print out the x matrix for debugging
     y_mat = np.zeros((num_facilities, num_clients))
     for i in range(num_facilities):
@@ -126,7 +122,6 @@ def compute_OPT_rec(t, valid_indices, candidate_locations, distances, cost, OPT_
     T = t + 1  # Number of time periods
     num_facilities = len(candidate_locations)
     num_clients = len(candidate_locations)
-    #weights = {t: [1]*n for t in range(0, T)}  # Example weights
 
     #print("OPT cost:", OPT)
     #print("valid indices:", valid_indices)
